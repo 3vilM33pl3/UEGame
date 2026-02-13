@@ -1,0 +1,17 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "SteamDeck Device Profile Selector",
+	"Description": "Selects the SteamDeck device profile on Steam Deck hardware.",
+	"Category": "Performance",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"Modules": [
+		{
+			"Name": "SteamDeckDeviceProfileSelector",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

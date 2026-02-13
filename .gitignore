@@ -1,0 +1,50 @@
+# Unreal Engine generated folders
+/Binaries/
+/DerivedDataCache/
+/Intermediate/
+/Saved/
+
+# Project and IDE local settings
+/.brv/
+/.idea/
+/.vscode/
+/.vs/
+*.code-workspace
+
+# Unreal generated project files
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Build/cook/package outputs
+/Build/**/FileOpenOrder/
+/Build/**/*.log
+/Build/**/*.txt
+
+# Plugin generated folders
+/Plugins/*/Binaries/
+/Plugins/*/Intermediate/
+
+# Rust external client build outputs
+/External/target/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.log
+
+# Crash dumps
+*.dmp
+*.core
+
+# Third-party / marketplace content (keep out of git)
+/Content/_ThirdParty/
+/Content/Fab/
+/Content/Marketplace/
+/Content/CitySampleBuildings/
+/Content/Stylized_Spruce_Forest/
