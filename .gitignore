@@ -6,6 +6,7 @@
 
 # Project and IDE local settings
 /.brv/
+/.git.backup.*/
 /.idea/
 /.vscode/
 /.vs/
