@@ -228,6 +228,11 @@ fi
 
 chmod +x "$UE_PROJECT_ROOT/UEGame/Binaries/Linux/UEGame"
 
+UE_RUNTIME_ARGS=()
+if [ "$UNREALCV_PORT" != "0" ]; then
+  UE_RUNTIME_ARGS+=("-cvport=$UNREALCV_PORT")
+fi
+
 route_signature() {
   ip route get 1.1.1.1 2>/dev/null | awk '
     / dev / {
@@ -264,10 +269,11 @@ restart_launcher() {
   -forcelogflush \
   -abslog="$UE_LOG_FILE" \
   -UserDir="$UE_SAVE_ROOT" \
+  "${UE_RUNTIME_ARGS[@]}" \
   "$@" &
 UE_PID=$!
 
-echo "UEGame started pid=$UE_PID save_root=$UE_SAVE_ROOT log_file=$UE_LOG_FILE exports_dir=$UE_EXPORT_DIR"
+echo "UEGame started pid=$UE_PID save_root=$UE_SAVE_ROOT log_file=$UE_LOG_FILE exports_dir=$UE_EXPORT_DIR unrealcv_port=$UNREALCV_PORT"
 
 last_route="$(route_signature || true)"
 port_grace_deadline=$(( $(date +%s) + UE_UNREALCV_PORT_GRACE_SECONDS ))

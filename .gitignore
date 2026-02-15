@@ -42,6 +42,7 @@ Thumbs.db
 # Crash dumps
 *.dmp
 *.core
+unrealcv.ini
 
 # Third-party / marketplace content (keep out of git)
 /Content/_ThirdParty/

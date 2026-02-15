@@ -17,6 +17,29 @@ Unreal Engine project for CanalCV experiments, with a minimal external CLI scaff
 2. Start Play In Editor (PIE) from the editor.
 3. Project defaults are configured to open `/Game/StartMap.StartMap`.
 
+## UnrealCV Integration Baseline (`3VI-251`)
+
+- Unreal Engine baseline: `5.7.2` (`/home/olivier/Projects/UnrealEngine/Engine/Build/Build.version`).
+- UnrealCV source baseline: `unrealcv/unrealcv` branch `5.2`, commit `8ec7a8cf389c0e2eb6658d5fe64806ad22e586d3`.
+- Plugin is vendored at `Plugins/UnrealCV/` and enabled in `UEGame.uproject`.
+
+Validation commands used:
+
+```bash
+/home/olivier/Projects/UnrealEngine/Engine/Build/BatchFiles/Linux/Build.sh UEGameEditor Linux Development -Project=/home/olivier/Projects/CanalGame/UEGame/UEGame.uproject -WaitMutex -NoHotReloadFromIDE
+```
+
+```bash
+/home/olivier/Projects/UnrealEngine/Engine/Binaries/Linux/UnrealEditor /home/olivier/Projects/CanalGame/UEGame/UEGame.uproject -game -unattended -nullrhi -nosound -NoSplash -ExecCmds="vget /unrealcv/status,quit" -log
+```
+
+Notes:
+- `vget /unrealcv/status` is accepted and returns server status/config in logs.
+- If TCP port `9000` is already occupied on your machine, set another UnrealCV port (see Steam Deck section below or use `-cvport=<port>`).
+- Quick day-to-day guide: `docs/unrealcv-quickstart.md`.
+- One-command smoke test: `./scripts/unrealcv_smoke_test.sh`.
+- Full manual test checklist: `docs/manual-testing-unrealcv.md`.
+
 If you use local helper scripts:
 
 ```bash
@@ -66,6 +89,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - Supports configurable save/log/export roots (`UE_SAVE_ROOT`, `UE_LOG_DIR`, `UE_EXPORT_DIR`).
 - Writes timestamped logs and updates `Logs/UEGame-latest.log`.
 - Uses `-forcelogflush` and explicit `-abslog`.
+- Passes `-cvport=$UNREALCV_PORT` to the game when `UNREALCV_PORT` is set.
 - Can auto-restart on network route changes (`UE_NETWORK_RESTART_ON_CHANGE=1`).
 - Can auto-restart when UnrealCV port is not listening (`UNREALCV_PORT`, `UE_UNREALCV_PORT_RESTART=1`).
 
@@ -75,6 +99,8 @@ Runtime launcher hardening (`UEGame.sh`):
 - Keep project-wide runtime settings in `Config/`.
 - Keep automation scripts in `scripts/`.
 - Keep non-Unreal tools and clients under `External/`.
+- Tile schema / hex + WFC generator notes: `docs/canal-topology-tile-schema.md`.
+- Topology generator actor usage: `docs/canal-topology-generator-actor.md`.
 
 ## Platform Validation Notes
 
