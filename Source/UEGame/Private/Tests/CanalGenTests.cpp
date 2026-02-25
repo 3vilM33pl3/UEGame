@@ -3,6 +3,8 @@
 #include "Misc/AutomationTest.h"
 
 #include "CanalGen/CanalPrototypeTileSet.h"
+#include "CanalGen/CanalScenarioInterface.h"
+#include "CanalGen/CanalTopologyGeneratorActor.h"
 #include "CanalGen/CanalTopologyTileSetAsset.h"
 #include "CanalGen/CanalTopologyTileTypes.h"
 #include "CanalGen/HexGridTypes.h"
@@ -534,6 +536,31 @@ bool FHexWfcBatchHarnessStatsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Tile histogram should include generated tile ID."), TileBin != nullptr);
 	TestEqual(TEXT("Tile histogram count should match solved cells."), TileBin ? TileBin->Count : -1, ExpectedTileCount);
 	TestTrue(TEXT("Single-tile histogram fraction should be 1."), TileBin && FMath::IsNearlyEqual(TileBin->Fraction, 1.0f, KINDA_SMALL_NUMBER));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalScenarioMetadataSetterTest,
+	"UEGame.Canal.Scenario.MetadataSetter",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalScenarioMetadataSetterTest::RunTest(const FString& Parameters)
+{
+	ACanalTopologyGeneratorActor* Generator = NewObject<ACanalTopologyGeneratorActor>(GetTransientPackage());
+	if (!Generator)
+	{
+		AddError(TEXT("Failed to allocate topology generator actor."));
+		return false;
+	}
+
+	Generator->SetScenarioMetadata(TEXT("CaptureRun"), 45.5f);
+	TestEqual(TEXT("Scenario name should be recorded to generation metadata."), Generator->LastGenerationMetadata.ScenarioName, FName(TEXT("CaptureRun")));
+	TestTrue(TEXT("Scenario duration should be recorded to generation metadata."), FMath::IsNearlyEqual(Generator->LastGenerationMetadata.ScenarioDurationSeconds, 45.5f));
+
+	FCanalScenarioRequest Request;
+	TestTrue(TEXT("Scenario request defaults to generated spline usage."), Request.bUseGeneratedWaterSpline);
+	TestTrue(TEXT("Scenario request default duration should be positive."), Request.RequestedDurationSeconds > 0.0f);
 
 	return true;
 }

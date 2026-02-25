@@ -29,7 +29,7 @@
 4. Optionally assign environment actors (`DirectionalLightActor`, `ExponentialHeightFogActor`) and set runtime controls (`TimeOfDayPreset`, `FogDensity`).
 5. Click `GenerateTopology` (CallInEditor).
 6. Inspect generated instances and `WaterPathSpline`.
-7. Inspect `LastGenerationMetadata` for derived stream seeds, biome profile, resolved ports, spline point count, time-of-day preset, and fog density.
+7. Inspect `LastGenerationMetadata` for derived stream seeds, biome profile, resolved ports, spline point count, time-of-day preset, fog density, and scenario metadata.
 
 ## Notes
 
@@ -41,6 +41,8 @@
   - `SetTimeOfDayPreset(...)`
   - `SetFogDensity(...)`
   - `ApplyEnvironmentSettings()`
+- Scenario metadata can be set via `SetScenarioMetadata(...)`.
+- Spline point export is available via `GetGeneratedSplinePoints(...)`.
 - Environment values are persisted to `LastGenerationMetadata` each run.
 - Enable `bDrawPortDebug` to visualize entry (green) and exit (red) port markers in-world.
 - Enable `bDrawGridDebug` to draw hex outlines and per-cell tile labels (`tileId` + rotation).

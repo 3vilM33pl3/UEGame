@@ -237,6 +237,26 @@ bool ACanalTopologyGeneratorActor::HasGeneratedSpline() const
 	return WaterPathSpline->GetNumberOfSplinePoints() >= 2;
 }
 
+void ACanalTopologyGeneratorActor::GetGeneratedSplinePoints(TArray<FVector>& OutPoints, const bool bWorldSpace) const
+{
+	OutPoints.Reset();
+
+	const int32 NumPoints = WaterPathSpline->GetNumberOfSplinePoints();
+	OutPoints.Reserve(NumPoints);
+
+	const ESplineCoordinateSpace::Type Space = bWorldSpace ? ESplineCoordinateSpace::World : ESplineCoordinateSpace::Local;
+	for (int32 Index = 0; Index < NumPoints; ++Index)
+	{
+		OutPoints.Add(WaterPathSpline->GetLocationAtSplinePoint(Index, Space));
+	}
+}
+
+void ACanalTopologyGeneratorActor::SetScenarioMetadata(const FName InScenarioName, const float InScenarioDurationSeconds)
+{
+	LastGenerationMetadata.ScenarioName = InScenarioName;
+	LastGenerationMetadata.ScenarioDurationSeconds = FMath::Max(0.0f, InScenarioDurationSeconds);
+}
+
 void ACanalTopologyGeneratorActor::SetTimeOfDayPreset(const ECanalTimeOfDayPreset NewPreset, const bool bApplyNow)
 {
 	TimeOfDayPreset = NewPreset;

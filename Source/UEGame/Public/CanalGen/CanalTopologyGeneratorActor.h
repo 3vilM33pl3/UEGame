@@ -60,6 +60,12 @@ struct UEGAME_API FCanalGenerationMetadata
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
 	float FogDensity = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	FName ScenarioName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	float ScenarioDurationSeconds = 0.0f;
 };
 
 UCLASS(BlueprintType, Blueprintable)
@@ -79,8 +85,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Canal|Generation")
 	bool HasGeneratedSpline() const;
 
+	UFUNCTION(BlueprintCallable, Category = "Canal|Generation")
+	void GetGeneratedSplinePoints(TArray<FVector>& OutPoints, bool bWorldSpace = true) const;
+
 	UFUNCTION(BlueprintPure, Category = "Canal|Debug")
 	bool ShouldRenderSemanticOverlay(bool bForDatasetCapture = false) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Canal|Scenario")
+	void SetScenarioMetadata(FName InScenarioName, float InScenarioDurationSeconds);
 
 	UFUNCTION(BlueprintCallable, Category = "Canal|Environment")
 	void SetTimeOfDayPreset(ECanalTimeOfDayPreset NewPreset, bool bApplyNow = true);

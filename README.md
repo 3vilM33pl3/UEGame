@@ -102,6 +102,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - Tile schema / hex + WFC generator notes: `docs/canal-topology-tile-schema.md`.
 - Prototype tile set catalog and diagrams: `docs/canal-topology-tiles-v0.md`.
 - Topology generator actor usage: `docs/canal-topology-generator-actor.md`.
+- Scenario runner and capture lifecycle hooks: `docs/canal-scenario-runner.md`.
 - WFC batch harness + CLI reports: `docs/hex-wfc-batch-harness.md` and `scripts/run_wfc_batch.sh`.
 
 ## Platform Validation Notes
