@@ -147,6 +147,10 @@ void ACanalTopologyGeneratorActor::GenerateTopology()
 	{
 		DrawGridDebug(Compatibility);
 	}
+	if (ShouldRenderSemanticOverlay(false))
+	{
+		DrawSemanticOverlay(Compatibility);
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("Canal topology generated: %d cells, attempts=%d"), LastSolveResult.Cells.Num(), LastSolveResult.AttemptsUsed);
 }
@@ -168,6 +172,21 @@ void ACanalTopologyGeneratorActor::ClearGenerated()
 bool ACanalTopologyGeneratorActor::HasGeneratedSpline() const
 {
 	return WaterPathSpline->GetNumberOfSplinePoints() >= 2;
+}
+
+bool ACanalTopologyGeneratorActor::ShouldRenderSemanticOverlay(const bool bForDatasetCapture) const
+{
+	if (!bDrawSemanticOverlay)
+	{
+		return false;
+	}
+
+	if (bForDatasetCapture && !bAllowSemanticOverlayInDatasetCapture)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 bool ACanalTopologyGeneratorActor::ValidateTileSet(FString& OutError) const
@@ -446,6 +465,99 @@ void ACanalTopologyGeneratorActor::DrawGridDebug(const FCanalTileCompatibilityTa
 			nullptr,
 			bWaterCell ? FColor::Cyan : FColor::White,
 			GridDebugDuration);
+	}
+}
+
+void ACanalTopologyGeneratorActor::DrawSemanticOverlay(const FCanalTileCompatibilityTable& Compatibility) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TMap<FHexAxialCoord, const FHexWfcCellResult*> CellByCoord;
+	CellByCoord.Reserve(LastSolveResult.Cells.Num());
+	for (const FHexWfcCellResult& Cell : LastSolveResult.Cells)
+	{
+		CellByCoord.Add(Cell.Coord, &Cell);
+	}
+
+	auto SocketColor = [](const ECanalSocketType Socket) -> FColor
+	{
+		switch (Socket)
+		{
+		case ECanalSocketType::Water:
+			return FColor(32, 180, 255);
+		case ECanalSocketType::TowpathL:
+			return FColor(64, 220, 96);
+		case ECanalSocketType::TowpathR:
+			return FColor(245, 210, 32);
+		case ECanalSocketType::Lock:
+			return FColor(255, 140, 32);
+		case ECanalSocketType::Road:
+			return FColor(255, 64, 210);
+		case ECanalSocketType::Bank:
+		default:
+			return FColor(110, 110, 110);
+		}
+	};
+
+	for (const FHexWfcCellResult& Cell : LastSolveResult.Cells)
+	{
+		const FCanalTopologyTileDefinition* Tile = Compatibility.GetTileDefinition(Cell.Variant.TileIndex);
+		if (!Tile)
+		{
+			continue;
+		}
+
+		const FVector CellCenter = GetActorTransform().TransformPosition(GridLayout.AxialToWorld(Cell.Coord, SemanticOverlayZOffset));
+		for (int32 DirectionIndex = 0; DirectionIndex < 6; ++DirectionIndex)
+		{
+			const EHexDirection Direction = HexDirectionFromIndex(DirectionIndex);
+			const ECanalSocketType Socket = Tile->GetSocket(Direction, Cell.Variant.RotationSteps);
+			if (Socket == ECanalSocketType::Bank)
+			{
+				continue;
+			}
+
+			const FVector NeighborCenter = GetActorTransform().TransformPosition(GridLayout.AxialToWorld(Cell.Coord.Neighbor(Direction), SemanticOverlayZOffset));
+			const FVector DirectionVector = (NeighborCenter - CellCenter).GetSafeNormal();
+			const FVector SocketPosition = CellCenter + DirectionVector * (GridLayout.HexSize * SocketOffsetScale);
+			const FColor Color = SocketColor(Socket);
+
+			DrawDebugLine(World, CellCenter, SocketPosition, Color, false, SemanticOverlayDuration, 0, SemanticOverlayThickness);
+			DrawDebugPoint(World, SocketPosition, 8.0f, Color, false, SemanticOverlayDuration, 0);
+		}
+	}
+
+	// Draw contiguous water channels explicitly so path connectivity is obvious at a glance.
+	for (const FHexWfcCellResult& Cell : LastSolveResult.Cells)
+	{
+		const FVector CellCenter = GetActorTransform().TransformPosition(GridLayout.AxialToWorld(Cell.Coord, SemanticOverlayZOffset));
+		for (int32 DirectionIndex = 0; DirectionIndex < 6; ++DirectionIndex)
+		{
+			const EHexDirection Direction = HexDirectionFromIndex(DirectionIndex);
+			const FHexAxialCoord NeighborCoord = Cell.Coord.Neighbor(Direction);
+			const FHexWfcCellResult* NeighborCell = CellByCoord.FindRef(NeighborCoord);
+			if (!NeighborCell)
+			{
+				continue;
+			}
+
+			if (NeighborCell->Coord.R < Cell.Coord.R || (NeighborCell->Coord.R == Cell.Coord.R && NeighborCell->Coord.Q < Cell.Coord.Q))
+			{
+				continue;
+			}
+
+			if (!IsWaterConnection(Compatibility, Cell, *NeighborCell, Direction))
+			{
+				continue;
+			}
+
+			const FVector NeighborCenter = GetActorTransform().TransformPosition(GridLayout.AxialToWorld(NeighborCoord, SemanticOverlayZOffset));
+			DrawDebugLine(World, CellCenter, NeighborCenter, FColor(32, 190, 255), false, SemanticOverlayDuration, 0, SemanticOverlayThickness + 1.0f);
+		}
 	}
 }
 

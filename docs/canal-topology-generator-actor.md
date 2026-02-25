@@ -38,4 +38,10 @@
 - Spline points are generated as `CurveClamped` to smooth channel corners.
 - Enable `bDrawPortDebug` to visualize entry (green) and exit (red) port markers in-world.
 - Enable `bDrawGridDebug` to draw hex outlines and per-cell tile labels (`tileId` + rotation).
+- Enable `bDrawSemanticOverlay` to draw semantic edge overlays:
+  - water channels
+  - towpath left/right edges
+  - lock edges
+  - road edges
+- Use `bAllowSemanticOverlayInDatasetCapture=false` (default) to keep overlays out of dataset capture passes.
 - Use `ClearGenerated` to reset all generated instances/spline.

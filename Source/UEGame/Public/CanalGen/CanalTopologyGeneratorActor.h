@@ -62,6 +62,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Canal|Generation")
 	bool HasGeneratedSpline() const;
 
+	UFUNCTION(BlueprintPure, Category = "Canal|Debug")
+	bool ShouldRenderSemanticOverlay(bool bForDatasetCapture = false) const;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -73,6 +76,7 @@ private:
 	FVector GetBoundaryPortWorldPosition(const FHexBoundaryPort& Port) const;
 	void DrawPortDebug() const;
 	void DrawGridDebug(const FCanalTileCompatibilityTable& Compatibility) const;
+	void DrawSemanticOverlay(const FCanalTileCompatibilityTable& Compatibility) const;
 	bool IsWaterConnection(
 		const FCanalTileCompatibilityTable& Compatibility,
 		const FHexWfcCellResult& A,
@@ -137,6 +141,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
 	bool bDrawGridDebug = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
+	bool bDrawSemanticOverlay = false;
+
+	// Dataset capture should keep semantic overlays off by default.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
+	bool bAllowSemanticOverlayInDatasetCapture = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug", meta = (ClampMin = "0.0"))
 	float PortDebugZOffset = 30.0f;
 
@@ -154,6 +165,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
 	float GridDebugLabelZOffset = 60.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug", meta = (ClampMin = "0.0"))
+	float SemanticOverlayDuration = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug", meta = (ClampMin = "0.0"))
+	float SemanticOverlayThickness = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
+	float SemanticOverlayZOffset = 80.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Meshes")
 	TObjectPtr<UStaticMesh> DefaultMesh;
