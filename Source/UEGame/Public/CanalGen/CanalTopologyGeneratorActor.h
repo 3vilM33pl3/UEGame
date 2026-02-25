@@ -11,6 +11,17 @@ class UHierarchicalInstancedStaticMeshComponent;
 class USceneComponent;
 class USplineComponent;
 class UStaticMesh;
+class ADirectionalLight;
+class AExponentialHeightFog;
+
+UENUM(BlueprintType)
+enum class ECanalTimeOfDayPreset : uint8
+{
+	Dawn = 0,
+	Noon = 1,
+	Dusk = 2,
+	Night = 3
+};
 
 USTRUCT(BlueprintType)
 struct UEGAME_API FCanalGenerationMetadata
@@ -43,6 +54,12 @@ struct UEGAME_API FCanalGenerationMetadata
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
 	int32 SplinePointCount = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	ECanalTimeOfDayPreset TimeOfDayPreset = ECanalTimeOfDayPreset::Noon;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	float FogDensity = 0.0f;
 };
 
 UCLASS(BlueprintType, Blueprintable)
@@ -64,6 +81,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Canal|Debug")
 	bool ShouldRenderSemanticOverlay(bool bForDatasetCapture = false) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Canal|Environment")
+	void SetTimeOfDayPreset(ECanalTimeOfDayPreset NewPreset, bool bApplyNow = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Canal|Environment")
+	void SetFogDensity(float NewFogDensity, bool bApplyNow = true);
+
+	UFUNCTION(BlueprintCallable, Category = "Canal|Environment")
+	void ApplyEnvironmentSettings();
 
 protected:
 	virtual void BeginPlay() override;
@@ -134,6 +160,21 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Generation")
 	bool bGenerateSpline = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment")
+	ECanalTimeOfDayPreset TimeOfDayPreset = ECanalTimeOfDayPreset::Noon;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment", meta = (ClampMin = "0.0"))
+	float FogDensity = 0.02f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment")
+	bool bApplyEnvironmentOnGenerate = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment")
+	TObjectPtr<ADirectionalLight> DirectionalLightActor;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment")
+	TObjectPtr<AExponentialHeightFog> ExponentialHeightFogActor;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Debug")
 	bool bDrawPortDebug = true;

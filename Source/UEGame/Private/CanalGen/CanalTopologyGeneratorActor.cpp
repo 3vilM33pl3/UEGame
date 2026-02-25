@@ -5,9 +5,64 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SplineComponent.h"
+#include "Components/ExponentialHeightFogComponent.h"
+#include "Components/LightComponent.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/DirectionalLight.h"
+#include "Engine/ExponentialHeightFog.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	FRotator GetSunRotationForPreset(const ECanalTimeOfDayPreset Preset)
+	{
+		switch (Preset)
+		{
+		case ECanalTimeOfDayPreset::Dawn:
+			return FRotator(-8.0f, 90.0f, 0.0f);
+		case ECanalTimeOfDayPreset::Noon:
+			return FRotator(-65.0f, 180.0f, 0.0f);
+		case ECanalTimeOfDayPreset::Dusk:
+			return FRotator(-8.0f, 270.0f, 0.0f);
+		case ECanalTimeOfDayPreset::Night:
+		default:
+			return FRotator(8.0f, 0.0f, 0.0f);
+		}
+	}
+
+	float GetSunIntensityForPreset(const ECanalTimeOfDayPreset Preset)
+	{
+		switch (Preset)
+		{
+		case ECanalTimeOfDayPreset::Dawn:
+			return 3.0f;
+		case ECanalTimeOfDayPreset::Noon:
+			return 10.0f;
+		case ECanalTimeOfDayPreset::Dusk:
+			return 2.5f;
+		case ECanalTimeOfDayPreset::Night:
+		default:
+			return 0.05f;
+		}
+	}
+
+	FLinearColor GetSunColorForPreset(const ECanalTimeOfDayPreset Preset)
+	{
+		switch (Preset)
+		{
+		case ECanalTimeOfDayPreset::Dawn:
+			return FLinearColor(1.0f, 0.74f, 0.56f);
+		case ECanalTimeOfDayPreset::Noon:
+			return FLinearColor(1.0f, 0.98f, 0.92f);
+		case ECanalTimeOfDayPreset::Dusk:
+			return FLinearColor(1.0f, 0.62f, 0.44f);
+		case ECanalTimeOfDayPreset::Night:
+		default:
+			return FLinearColor(0.42f, 0.48f, 0.64f);
+		}
+	}
+}
 
 ACanalTopologyGeneratorActor::ACanalTopologyGeneratorActor()
 {
@@ -53,6 +108,7 @@ ACanalTopologyGeneratorActor::ACanalTopologyGeneratorActor()
 void ACanalTopologyGeneratorActor::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyEnvironmentSettings();
 
 	if (bGenerateOnBeginPlay)
 	{
@@ -63,6 +119,11 @@ void ACanalTopologyGeneratorActor::BeginPlay()
 void ACanalTopologyGeneratorActor::GenerateTopology()
 {
 	ClearGenerated();
+
+	if (bApplyEnvironmentOnGenerate)
+	{
+		ApplyEnvironmentSettings();
+	}
 
 	FString ValidationError;
 	if (!ValidateTileSet(ValidationError))
@@ -85,6 +146,8 @@ void ACanalTopologyGeneratorActor::GenerateTopology()
 	LastGenerationMetadata.TopologySeed = TopologySeed;
 	LastGenerationMetadata.DressingSeed = DressingSeed;
 	LastGenerationMetadata.BiomeProfile = TopologySolveConfig.BiomeProfile;
+	LastGenerationMetadata.TimeOfDayPreset = TimeOfDayPreset;
+	LastGenerationMetadata.FogDensity = FogDensity;
 
 	LastSolveResult = UCanalWfcBlueprintLibrary::SolveHexWfc(TileSet, GridConfig, TopologySolveConfig);
 	if (!LastSolveResult.bSolved)
@@ -172,6 +235,48 @@ void ACanalTopologyGeneratorActor::ClearGenerated()
 bool ACanalTopologyGeneratorActor::HasGeneratedSpline() const
 {
 	return WaterPathSpline->GetNumberOfSplinePoints() >= 2;
+}
+
+void ACanalTopologyGeneratorActor::SetTimeOfDayPreset(const ECanalTimeOfDayPreset NewPreset, const bool bApplyNow)
+{
+	TimeOfDayPreset = NewPreset;
+	if (bApplyNow)
+	{
+		ApplyEnvironmentSettings();
+	}
+}
+
+void ACanalTopologyGeneratorActor::SetFogDensity(const float NewFogDensity, const bool bApplyNow)
+{
+	FogDensity = FMath::Max(0.0f, NewFogDensity);
+	if (bApplyNow)
+	{
+		ApplyEnvironmentSettings();
+	}
+}
+
+void ACanalTopologyGeneratorActor::ApplyEnvironmentSettings()
+{
+	LastGenerationMetadata.TimeOfDayPreset = TimeOfDayPreset;
+	LastGenerationMetadata.FogDensity = FogDensity;
+
+	if (DirectionalLightActor)
+	{
+		DirectionalLightActor->SetActorRotation(GetSunRotationForPreset(TimeOfDayPreset));
+		if (ULightComponent* LightComponent = DirectionalLightActor->GetLightComponent())
+		{
+			LightComponent->SetIntensity(GetSunIntensityForPreset(TimeOfDayPreset));
+			LightComponent->SetLightColor(GetSunColorForPreset(TimeOfDayPreset));
+		}
+	}
+
+	if (ExponentialHeightFogActor)
+	{
+		if (UExponentialHeightFogComponent* FogComponent = ExponentialHeightFogActor->GetComponent())
+		{
+			FogComponent->SetFogDensity(FogDensity);
+		}
+	}
 }
 
 bool ACanalTopologyGeneratorActor::ShouldRenderSemanticOverlay(const bool bForDatasetCapture) const

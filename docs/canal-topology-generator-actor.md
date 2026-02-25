@@ -26,9 +26,10 @@
 1. Place `CanalTopologyGeneratorActor` in a level.
 2. Assign a `UCanalTopologyTileSetAsset` to `TileSet`.
 3. Set grid and solve options (`GridConfig`, `SolveConfig`) and determinism option (`bDeriveSeedStreamsFromMaster`).
-4. Click `GenerateTopology` (CallInEditor).
-5. Inspect generated instances and `WaterPathSpline`.
-6. Inspect `LastGenerationMetadata` for derived stream seeds, biome profile, resolved ports, and spline point count.
+4. Optionally assign environment actors (`DirectionalLightActor`, `ExponentialHeightFogActor`) and set runtime controls (`TimeOfDayPreset`, `FogDensity`).
+5. Click `GenerateTopology` (CallInEditor).
+6. Inspect generated instances and `WaterPathSpline`.
+7. Inspect `LastGenerationMetadata` for derived stream seeds, biome profile, resolved ports, spline point count, time-of-day preset, and fog density.
 
 ## Notes
 
@@ -36,6 +37,11 @@
 - When `bDeriveSeedStreamsFromMaster=true`, topology and dressing seeds are derived deterministically from `SolveConfig.Seed`.
 - Spline uses resolved entry/exit ports when available; otherwise it uses a longest-path heuristic over water cells.
 - Spline points are generated as `CurveClamped` to smooth channel corners.
+- Runtime environment controls are available via Blueprint/callable methods:
+  - `SetTimeOfDayPreset(...)`
+  - `SetFogDensity(...)`
+  - `ApplyEnvironmentSettings()`
+- Environment values are persisted to `LastGenerationMetadata` each run.
 - Enable `bDrawPortDebug` to visualize entry (green) and exit (red) port markers in-world.
 - Enable `bDrawGridDebug` to draw hex outlines and per-cell tile labels (`tileId` + rotation).
 - Enable `bDrawSemanticOverlay` to draw semantic edge overlays:
