@@ -11,6 +11,8 @@
 #include "Engine/DirectionalLight.h"
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/StaticMesh.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
 namespace
@@ -62,6 +64,35 @@ namespace
 			return FLinearColor(0.42f, 0.48f, 0.64f);
 		}
 	}
+
+	constexpr TCHAR kTintParamName[] = TEXT("Tint");
+	constexpr TCHAR kBaseTintParamName[] = TEXT("BaseTint");
+	constexpr TCHAR kColorTintParamName[] = TEXT("ColorTint");
+	constexpr TCHAR kWetnessParamName[] = TEXT("Wetness");
+	constexpr TCHAR kRoughnessParamName[] = TEXT("Roughness");
+
+	const FName kPropTagBollard(TEXT("bollard"));
+	const FName kPropTagRing(TEXT("ring"));
+	const FName kPropTagSign(TEXT("sign"));
+	const FName kPropTagLamp(TEXT("lamp"));
+	const FName kPropTagBench(TEXT("bench"));
+	const FName kPropTagReeds(TEXT("reeds"));
+	const FName kPropTagBin(TEXT("bin"));
+	const FName kPropTagFence(TEXT("fence"));
+
+	void SetMaterialRandomizationParams(UMaterialInstanceDynamic* Material, const FLinearColor& Tint, const float Wetness)
+	{
+		if (!Material)
+		{
+			return;
+		}
+
+		Material->SetVectorParameterValue(kTintParamName, Tint);
+		Material->SetVectorParameterValue(kBaseTintParamName, Tint);
+		Material->SetVectorParameterValue(kColorTintParamName, Tint);
+		Material->SetScalarParameterValue(kWetnessParamName, Wetness);
+		Material->SetScalarParameterValue(kRoughnessParamName, FMath::Clamp(1.0f - Wetness, 0.05f, 1.0f));
+	}
 }
 
 ACanalTopologyGeneratorActor::ACanalTopologyGeneratorActor()
@@ -76,6 +107,14 @@ ACanalTopologyGeneratorActor::ACanalTopologyGeneratorActor()
 	TowpathInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("TowpathInstances"));
 	LockInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("LockInstances"));
 	RoadInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("RoadInstances"));
+	BollardPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("BollardPropInstances"));
+	RingPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("RingPropInstances"));
+	SignPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("SignPropInstances"));
+	LampPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("LampPropInstances"));
+	BenchPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("BenchPropInstances"));
+	ReedsPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("ReedsPropInstances"));
+	BinPropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("BinPropInstances"));
+	FencePropInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("FencePropInstances"));
 	WaterPathSpline = CreateDefaultSubobject<USplineComponent>(TEXT("WaterPathSpline"));
 
 	WaterInstances->SetupAttachment(SceneRoot);
@@ -83,15 +122,97 @@ ACanalTopologyGeneratorActor::ACanalTopologyGeneratorActor()
 	TowpathInstances->SetupAttachment(SceneRoot);
 	LockInstances->SetupAttachment(SceneRoot);
 	RoadInstances->SetupAttachment(SceneRoot);
+	BollardPropInstances->SetupAttachment(SceneRoot);
+	RingPropInstances->SetupAttachment(SceneRoot);
+	SignPropInstances->SetupAttachment(SceneRoot);
+	LampPropInstances->SetupAttachment(SceneRoot);
+	BenchPropInstances->SetupAttachment(SceneRoot);
+	ReedsPropInstances->SetupAttachment(SceneRoot);
+	BinPropInstances->SetupAttachment(SceneRoot);
+	FencePropInstances->SetupAttachment(SceneRoot);
 	WaterPathSpline->SetupAttachment(SceneRoot);
+
+	BollardPropInstances->ComponentTags = {kPropTagBollard};
+	RingPropInstances->ComponentTags = {kPropTagRing};
+	SignPropInstances->ComponentTags = {kPropTagSign};
+	LampPropInstances->ComponentTags = {kPropTagLamp};
+	BenchPropInstances->ComponentTags = {kPropTagBench};
+	ReedsPropInstances->ComponentTags = {kPropTagReeds};
+	BinPropInstances->ComponentTags = {kPropTagBin};
+	FencePropInstances->ComponentTags = {kPropTagFence};
 
 	WaterPathSpline->SetClosedLoop(false);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> PlaneMesh(TEXT("/Engine/BasicShapes/Plane.Plane"));
 	if (CubeMesh.Succeeded())
 	{
 		DefaultMesh = CubeMesh.Object;
 	}
+
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> WaterMaterialFinder(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> BankMaterialFinder(TEXT("/Engine/EngineMaterials/WorldGridMaterial.WorldGridMaterial"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> TowpathMaterialFinder(TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> FallbackMaterialFinder(TEXT("/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial"));
+	if (WaterMaterialFinder.Succeeded())
+	{
+		WaterMaterialProfile.Material = WaterMaterialFinder.Object;
+	}
+	else if (FallbackMaterialFinder.Succeeded())
+	{
+		WaterMaterialProfile.Material = FallbackMaterialFinder.Object;
+	}
+	if (BankMaterialFinder.Succeeded())
+	{
+		BankMaterialProfile.Material = BankMaterialFinder.Object;
+	}
+	else if (FallbackMaterialFinder.Succeeded())
+	{
+		BankMaterialProfile.Material = FallbackMaterialFinder.Object;
+	}
+	if (TowpathMaterialFinder.Succeeded())
+	{
+		TowpathMaterialProfile.Material = TowpathMaterialFinder.Object;
+	}
+	else if (FallbackMaterialFinder.Succeeded())
+	{
+		TowpathMaterialProfile.Material = FallbackMaterialFinder.Object;
+	}
+
+	WaterMaterialProfile.Tint = FLinearColor(0.16f, 0.38f, 0.66f);
+	WaterMaterialProfile.Wetness = 0.85f;
+	WaterMaterialProfile.TintJitter = 0.10f;
+	WaterMaterialProfile.WetnessJitter = 0.08f;
+	BankMaterialProfile.Tint = FLinearColor(0.48f, 0.40f, 0.30f);
+	BankMaterialProfile.Wetness = 0.38f;
+	BankMaterialProfile.TintJitter = 0.09f;
+	BankMaterialProfile.WetnessJitter = 0.10f;
+	TowpathMaterialProfile.Tint = FLinearColor(0.58f, 0.52f, 0.42f);
+	TowpathMaterialProfile.Wetness = 0.25f;
+	TowpathMaterialProfile.TintJitter = 0.08f;
+	TowpathMaterialProfile.WetnessJitter = 0.10f;
+
+	UStaticMesh* BollardMesh = CylinderMesh.Succeeded() ? CylinderMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* RingMesh = SphereMesh.Succeeded() ? SphereMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* SignMesh = CubeMesh.Succeeded() ? CubeMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* LampMesh = ConeMesh.Succeeded() ? ConeMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* BenchMesh = CubeMesh.Succeeded() ? CubeMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* ReedsMesh = ConeMesh.Succeeded() ? ConeMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* BinMesh = CylinderMesh.Succeeded() ? CylinderMesh.Object.Get() : DefaultMesh.Get();
+	UStaticMesh* FenceMesh = PlaneMesh.Succeeded() ? PlaneMesh.Object.Get() : DefaultMesh.Get();
+
+	TowpathPropDefinitions = {
+		{FName(TEXT("prop_bollard")), kPropTagBollard, BollardMesh, FVector(0.10f, 0.10f, 0.18f), 10.0f, 1.0f},
+		{FName(TEXT("prop_ring")), kPropTagRing, RingMesh, FVector(0.10f, 0.10f, 0.04f), 16.0f, 0.8f},
+		{FName(TEXT("prop_sign")), kPropTagSign, SignMesh, FVector(0.05f, 0.16f, 0.24f), 18.0f, 0.9f},
+		{FName(TEXT("prop_lamp")), kPropTagLamp, LampMesh, FVector(0.09f, 0.09f, 0.28f), 20.0f, 0.7f},
+		{FName(TEXT("prop_bench")), kPropTagBench, BenchMesh, FVector(0.22f, 0.08f, 0.08f), 8.0f, 0.95f},
+		{FName(TEXT("prop_reeds")), kPropTagReeds, ReedsMesh, FVector(0.07f, 0.07f, 0.22f), 4.0f, 1.0f},
+		{FName(TEXT("prop_bin")), kPropTagBin, BinMesh, FVector(0.10f, 0.10f, 0.14f), 9.0f, 0.85f},
+		{FName(TEXT("prop_fence")), kPropTagFence, FenceMesh, FVector(0.16f, 0.16f, 0.20f), 12.0f, 0.9f}};
 
 	GridConfig.Width = 12;
 	GridConfig.Height = 8;
@@ -196,6 +317,9 @@ void ACanalTopologyGeneratorActor::GenerateTopology()
 		}
 	}
 
+	ApplyPrototypeMaterials(DressingSeed);
+	SpawnTowpathProps(DressingSeed);
+
 	if (bGenerateSpline)
 	{
 		BuildSplineFromSolvedCells(Compatibility, LastSolveResult.Cells);
@@ -225,9 +349,24 @@ void ACanalTopologyGeneratorActor::ClearGenerated()
 	TowpathInstances->ClearInstances();
 	LockInstances->ClearInstances();
 	RoadInstances->ClearInstances();
+	BollardPropInstances->ClearInstances();
+	RingPropInstances->ClearInstances();
+	SignPropInstances->ClearInstances();
+	LampPropInstances->ClearInstances();
+	BenchPropInstances->ClearInstances();
+	ReedsPropInstances->ClearInstances();
+	BinPropInstances->ClearInstances();
+	FencePropInstances->ClearInstances();
 
 	WaterPathSpline->ClearSplinePoints(false);
 	WaterPathSpline->UpdateSpline();
+
+	LastWaterMaterialRuntime = FCanalResolvedMaterialProfile();
+	LastBankMaterialRuntime = FCanalResolvedMaterialProfile();
+	LastTowpathMaterialRuntime = FCanalResolvedMaterialProfile();
+	WaterRuntimeMaterial = nullptr;
+	BankRuntimeMaterial = nullptr;
+	TowpathRuntimeMaterial = nullptr;
 
 	LastGenerationMetadata = FCanalGenerationMetadata();
 }
@@ -299,6 +438,302 @@ void ACanalTopologyGeneratorActor::ApplyEnvironmentSettings()
 	}
 }
 
+int32 ACanalTopologyGeneratorActor::GetTotalTowpathPropCount() const
+{
+	return BollardPropInstances->GetInstanceCount()
+		+ RingPropInstances->GetInstanceCount()
+		+ SignPropInstances->GetInstanceCount()
+		+ LampPropInstances->GetInstanceCount()
+		+ BenchPropInstances->GetInstanceCount()
+		+ ReedsPropInstances->GetInstanceCount()
+		+ BinPropInstances->GetInstanceCount()
+		+ FencePropInstances->GetInstanceCount();
+}
+
+int32 ACanalTopologyGeneratorActor::GetTowpathPropCountByTag(const FName SemanticTag) const
+{
+	if (UHierarchicalInstancedStaticMeshComponent* const Component = ResolveTowpathPropComponent(SemanticTag))
+	{
+		return Component->GetInstanceCount();
+	}
+
+	return 0;
+}
+
+void ACanalTopologyGeneratorActor::GetTowpathPropSemanticTags(TArray<FName>& OutTags) const
+{
+	OutTags.Reset();
+	for (const FCanalTowpathPropDefinition& Definition : TowpathPropDefinitions)
+	{
+		if (!Definition.SemanticTag.IsNone())
+		{
+			OutTags.AddUnique(Definition.SemanticTag);
+		}
+	}
+}
+
+void ACanalTopologyGeneratorActor::ApplyPrototypeMaterials(const int32 DressingSeed)
+{
+	FRandomStream Random(DeriveDeterministicStreamSeed(DressingSeed, 0x4D41544Cu)); // 'MATL'
+
+	ApplyMaterialProfile(
+		WaterInstances,
+		WaterRuntimeMaterial,
+		WaterMaterialProfile,
+		Random,
+		LastWaterMaterialRuntime);
+	ApplyMaterialProfile(
+		BankInstances,
+		BankRuntimeMaterial,
+		BankMaterialProfile,
+		Random,
+		LastBankMaterialRuntime);
+	ApplyMaterialProfile(
+		TowpathInstances,
+		TowpathRuntimeMaterial,
+		TowpathMaterialProfile,
+		Random,
+		LastTowpathMaterialRuntime);
+}
+
+void ACanalTopologyGeneratorActor::ApplyMaterialProfile(
+	UHierarchicalInstancedStaticMeshComponent* Component,
+	TObjectPtr<UMaterialInstanceDynamic>& OutRuntimeMaterial,
+	const FCanalPrototypeMaterialProfile& Profile,
+	FRandomStream& Random,
+	FCanalResolvedMaterialProfile& OutResolvedProfile)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	UMaterialInterface* SourceMaterial = Profile.Material.Get();
+	if (!SourceMaterial)
+	{
+		SourceMaterial = Component->GetMaterial(0);
+	}
+	if (!SourceMaterial)
+	{
+		return;
+	}
+
+	const auto Jitter = [&Random](const float Magnitude) -> float
+	{
+		return Magnitude > 0.0f ? Random.FRandRange(-Magnitude, Magnitude) : 0.0f;
+	};
+
+	FLinearColor ResolvedTint = Profile.Tint;
+	ResolvedTint.R = FMath::Clamp(ResolvedTint.R + Jitter(Profile.TintJitter), 0.0f, 1.0f);
+	ResolvedTint.G = FMath::Clamp(ResolvedTint.G + Jitter(Profile.TintJitter), 0.0f, 1.0f);
+	ResolvedTint.B = FMath::Clamp(ResolvedTint.B + Jitter(Profile.TintJitter), 0.0f, 1.0f);
+	ResolvedTint.A = 1.0f;
+
+	const float ResolvedWetness = FMath::Clamp(Profile.Wetness + Jitter(Profile.WetnessJitter), 0.0f, 1.0f);
+
+	OutRuntimeMaterial = UMaterialInstanceDynamic::Create(SourceMaterial, this);
+	if (!OutRuntimeMaterial)
+	{
+		return;
+	}
+
+	SetMaterialRandomizationParams(OutRuntimeMaterial, ResolvedTint, ResolvedWetness);
+	Component->SetMaterial(0, OutRuntimeMaterial);
+	OutResolvedProfile.Tint = ResolvedTint;
+	OutResolvedProfile.Wetness = ResolvedWetness;
+}
+
+void ACanalTopologyGeneratorActor::RefreshTowpathPropMeshes()
+{
+	auto ApplyMesh = [this](const FName SemanticTag, UHierarchicalInstancedStaticMeshComponent* Component)
+	{
+		if (!Component)
+		{
+			return;
+		}
+
+		const FCanalTowpathPropDefinition* Definition = TowpathPropDefinitions.FindByPredicate(
+			[&SemanticTag](const FCanalTowpathPropDefinition& Candidate)
+			{
+				return Candidate.SemanticTag == SemanticTag;
+			});
+		if (!Definition)
+		{
+			return;
+		}
+
+		UStaticMesh* Mesh = Definition->Mesh.Get() ? Definition->Mesh.Get() : DefaultMesh.Get();
+		Component->SetStaticMesh(Mesh);
+		Component->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	};
+
+	ApplyMesh(kPropTagBollard, BollardPropInstances);
+	ApplyMesh(kPropTagRing, RingPropInstances);
+	ApplyMesh(kPropTagSign, SignPropInstances);
+	ApplyMesh(kPropTagLamp, LampPropInstances);
+	ApplyMesh(kPropTagBench, BenchPropInstances);
+	ApplyMesh(kPropTagReeds, ReedsPropInstances);
+	ApplyMesh(kPropTagBin, BinPropInstances);
+	ApplyMesh(kPropTagFence, FencePropInstances);
+}
+
+void ACanalTopologyGeneratorActor::SpawnTowpathProps(const int32 DressingSeed)
+{
+	if (!bSpawnTowpathProps || TowpathPropDensity <= 0.0f)
+	{
+		return;
+	}
+
+	const int32 TowpathInstanceCount = TowpathInstances->GetInstanceCount();
+	if (TowpathInstanceCount == 0)
+	{
+		return;
+	}
+
+	FRandomStream Random(DeriveDeterministicStreamSeed(DressingSeed, 0x50524F50u)); // 'PROP'
+
+	TArray<int32> CandidateIndices;
+	CandidateIndices.Reserve(TowpathInstanceCount);
+	for (int32 InstanceIndex = 0; InstanceIndex < TowpathInstanceCount; ++InstanceIndex)
+	{
+		if (Random.FRand() <= TowpathPropDensity)
+		{
+			CandidateIndices.Add(InstanceIndex);
+		}
+	}
+	if (CandidateIndices.Num() == 0)
+	{
+		return;
+	}
+
+	// Coverage-first placement so each configured semantic prop type appears at least once when possible.
+	for (const FCanalTowpathPropDefinition& Definition : TowpathPropDefinitions)
+	{
+		if (Definition.SemanticTag.IsNone() || Definition.Weight <= 0.0f || CandidateIndices.Num() == 0)
+		{
+			continue;
+		}
+
+		const int32 Picked = Random.RandRange(0, CandidateIndices.Num() - 1);
+		const int32 TowpathInstanceIndex = CandidateIndices[Picked];
+		CandidateIndices.RemoveAtSwap(Picked);
+		PlaceTowpathPropAtInstance(Definition, TowpathInstanceIndex, Random);
+	}
+
+	while (CandidateIndices.Num() > 0)
+	{
+		const FCanalTowpathPropDefinition* Definition = PickWeightedTowpathProp(Random);
+		if (!Definition)
+		{
+			break;
+		}
+
+		const int32 Picked = Random.RandRange(0, CandidateIndices.Num() - 1);
+		const int32 TowpathInstanceIndex = CandidateIndices[Picked];
+		CandidateIndices.RemoveAtSwap(Picked);
+		PlaceTowpathPropAtInstance(*Definition, TowpathInstanceIndex, Random);
+	}
+}
+
+UHierarchicalInstancedStaticMeshComponent* ACanalTopologyGeneratorActor::ResolveTowpathPropComponent(const FName SemanticTag) const
+{
+	if (SemanticTag == kPropTagBollard)
+	{
+		return BollardPropInstances;
+	}
+	if (SemanticTag == kPropTagRing)
+	{
+		return RingPropInstances;
+	}
+	if (SemanticTag == kPropTagSign)
+	{
+		return SignPropInstances;
+	}
+	if (SemanticTag == kPropTagLamp)
+	{
+		return LampPropInstances;
+	}
+	if (SemanticTag == kPropTagBench)
+	{
+		return BenchPropInstances;
+	}
+	if (SemanticTag == kPropTagReeds)
+	{
+		return ReedsPropInstances;
+	}
+	if (SemanticTag == kPropTagBin)
+	{
+		return BinPropInstances;
+	}
+	if (SemanticTag == kPropTagFence)
+	{
+		return FencePropInstances;
+	}
+	return nullptr;
+}
+
+bool ACanalTopologyGeneratorActor::PlaceTowpathPropAtInstance(
+	const FCanalTowpathPropDefinition& Definition,
+	const int32 TowpathInstanceIndex,
+	FRandomStream& Random)
+{
+	UHierarchicalInstancedStaticMeshComponent* TargetComponent = ResolveTowpathPropComponent(Definition.SemanticTag);
+	if (!TargetComponent)
+	{
+		return false;
+	}
+
+	FTransform TowpathTransform;
+	if (!TowpathInstances->GetInstanceTransform(TowpathInstanceIndex, TowpathTransform, true))
+	{
+		return false;
+	}
+
+	FVector Location = TowpathTransform.GetLocation();
+	Location += TowpathTransform.GetUnitAxis(EAxis::Z) * (TowpathPropZOffset + Definition.VerticalOffset);
+	Location += TowpathTransform.GetUnitAxis(EAxis::Y) * Random.FRandRange(-TowpathPropLateralJitter, TowpathPropLateralJitter);
+
+	FRotator Rotation = TowpathTransform.Rotator();
+	Rotation.Yaw += Random.FRandRange(-TowpathPropYawJitter, TowpathPropYawJitter);
+
+	const FTransform PropTransform(Rotation, Location, Definition.Scale);
+	TargetComponent->AddInstance(PropTransform, true);
+	return true;
+}
+
+const FCanalTowpathPropDefinition* ACanalTopologyGeneratorActor::PickWeightedTowpathProp(FRandomStream& Random) const
+{
+	float TotalWeight = 0.0f;
+	for (const FCanalTowpathPropDefinition& Definition : TowpathPropDefinitions)
+	{
+		if (Definition.Weight > 0.0f && !Definition.SemanticTag.IsNone())
+		{
+			TotalWeight += Definition.Weight;
+		}
+	}
+	if (TotalWeight <= KINDA_SMALL_NUMBER)
+	{
+		return nullptr;
+	}
+
+	float Draw = Random.FRandRange(0.0f, TotalWeight);
+	for (const FCanalTowpathPropDefinition& Definition : TowpathPropDefinitions)
+	{
+		if (Definition.Weight <= 0.0f || Definition.SemanticTag.IsNone())
+		{
+			continue;
+		}
+
+		Draw -= Definition.Weight;
+		if (Draw <= 0.0f)
+		{
+			return &Definition;
+		}
+	}
+
+	return TowpathPropDefinitions.Num() > 0 ? &TowpathPropDefinitions.Last() : nullptr;
+}
+
 bool ACanalTopologyGeneratorActor::ShouldRenderSemanticOverlay(const bool bForDatasetCapture) const
 {
 	if (!bDrawSemanticOverlay)
@@ -339,6 +774,7 @@ void ACanalTopologyGeneratorActor::RefreshInstanceMeshes()
 	TowpathInstances->SetStaticMesh(TowpathMesh.Get() ? TowpathMesh.Get() : Fallback);
 	LockInstances->SetStaticMesh(LockMesh.Get() ? LockMesh.Get() : Fallback);
 	RoadInstances->SetStaticMesh(RoadMesh.Get() ? RoadMesh.Get() : Fallback);
+	RefreshTowpathPropMeshes();
 }
 
 void ACanalTopologyGeneratorActor::AddSocketInstance(const ECanalSocketType SocketType, const FTransform& WorldTransform)

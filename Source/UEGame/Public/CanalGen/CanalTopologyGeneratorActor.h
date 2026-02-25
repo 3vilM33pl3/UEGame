@@ -11,6 +11,8 @@ class UHierarchicalInstancedStaticMeshComponent;
 class USceneComponent;
 class USplineComponent;
 class UStaticMesh;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class ADirectionalLight;
 class AExponentialHeightFog;
 
@@ -68,6 +70,63 @@ struct UEGAME_API FCanalGenerationMetadata
 	float ScenarioDurationSeconds = 0.0f;
 };
 
+USTRUCT(BlueprintType)
+struct UEGAME_API FCanalPrototypeMaterialProfile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials")
+	TObjectPtr<UMaterialInterface> Material = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials")
+	FLinearColor Tint = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Wetness = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TintJitter = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float WetnessJitter = 0.15f;
+};
+
+USTRUCT(BlueprintType)
+struct UEGAME_API FCanalResolvedMaterialProfile
+{
+	GENERATED_BODY()
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Materials")
+	FLinearColor Tint = FLinearColor::White;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Materials")
+	float Wetness = 0.5f;
+};
+
+USTRUCT(BlueprintType)
+struct UEGAME_API FCanalTowpathPropDefinition
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	FName PropId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	FName SemanticTag = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	TObjectPtr<UStaticMesh> Mesh = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	FVector Scale = FVector(0.22f, 0.22f, 0.22f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0"))
+	float VerticalOffset = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float Weight = 1.0f;
+};
+
 UCLASS(BlueprintType, Blueprintable)
 class UEGAME_API ACanalTopologyGeneratorActor : public AActor
 {
@@ -103,6 +162,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Canal|Environment")
 	void ApplyEnvironmentSettings();
 
+	UFUNCTION(BlueprintPure, Category = "Canal|Props")
+	int32 GetTotalTowpathPropCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Canal|Props")
+	int32 GetTowpathPropCountByTag(FName SemanticTag) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Canal|Props")
+	void GetTowpathPropSemanticTags(TArray<FName>& OutTags) const;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -115,6 +183,18 @@ private:
 	void DrawPortDebug() const;
 	void DrawGridDebug(const FCanalTileCompatibilityTable& Compatibility) const;
 	void DrawSemanticOverlay(const FCanalTileCompatibilityTable& Compatibility) const;
+	void ApplyPrototypeMaterials(int32 DressingSeed);
+	void ApplyMaterialProfile(
+		UHierarchicalInstancedStaticMeshComponent* Component,
+		TObjectPtr<UMaterialInstanceDynamic>& OutRuntimeMaterial,
+		const FCanalPrototypeMaterialProfile& Profile,
+		FRandomStream& Random,
+		FCanalResolvedMaterialProfile& OutResolvedProfile);
+	void RefreshTowpathPropMeshes();
+	void SpawnTowpathProps(int32 DressingSeed);
+	UHierarchicalInstancedStaticMeshComponent* ResolveTowpathPropComponent(FName SemanticTag) const;
+	bool PlaceTowpathPropAtInstance(const FCanalTowpathPropDefinition& Definition, int32 TowpathInstanceIndex, FRandomStream& Random);
+	const FCanalTowpathPropDefinition* PickWeightedTowpathProp(FRandomStream& Random) const;
 	bool IsWaterConnection(
 		const FCanalTileCompatibilityTable& Compatibility,
 		const FHexWfcCellResult& A,
@@ -141,6 +221,30 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
 	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> RoadInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> BollardPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> RingPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> SignPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> LampPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> BenchPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> ReedsPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> BinPropInstances;
+
+	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
+	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> FencePropInstances;
 
 	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
 	TObjectPtr<USplineComponent> WaterPathSpline;
@@ -172,6 +276,33 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Generation")
 	bool bGenerateSpline = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials")
+	FCanalPrototypeMaterialProfile WaterMaterialProfile;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials")
+	FCanalPrototypeMaterialProfile BankMaterialProfile;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Materials")
+	FCanalPrototypeMaterialProfile TowpathMaterialProfile;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	bool bSpawnTowpathProps = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float TowpathPropDensity = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0"))
+	float TowpathPropLateralJitter = 30.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0"))
+	float TowpathPropYawJitter = 22.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props", meta = (ClampMin = "0.0"))
+	float TowpathPropZOffset = 12.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Props")
+	TArray<FCanalTowpathPropDefinition> TowpathPropDefinitions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Environment")
 	ECanalTimeOfDayPreset TimeOfDayPreset = ECanalTimeOfDayPreset::Noon;
@@ -254,4 +385,23 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
 	FCanalGenerationMetadata LastGenerationMetadata;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Materials")
+	FCanalResolvedMaterialProfile LastWaterMaterialRuntime;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Materials")
+	FCanalResolvedMaterialProfile LastBankMaterialRuntime;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Canal|Materials")
+	FCanalResolvedMaterialProfile LastTowpathMaterialRuntime;
+
+private:
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> WaterRuntimeMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> BankRuntimeMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> TowpathRuntimeMaterial;
 };

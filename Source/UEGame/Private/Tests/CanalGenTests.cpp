@@ -64,6 +64,37 @@ namespace
 		return TileSetAsset;
 	}
 
+	UCanalTopologyTileSetAsset* BuildFullTowpathTileSetAsset(FAutomationTestBase& Test)
+	{
+		FCanalTopologyTileDefinition FullTowpathTile;
+		FullTowpathTile.TileId = TEXT("all_towpath_m1_props");
+		FullTowpathTile.Sockets = {
+			ECanalSocketType::TowpathL,
+			ECanalSocketType::TowpathL,
+			ECanalSocketType::TowpathL,
+			ECanalSocketType::TowpathL,
+			ECanalSocketType::TowpathL,
+			ECanalSocketType::TowpathL};
+		FullTowpathTile.Weight = 1.0f;
+
+		UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+		if (!TileSetAsset)
+		{
+			Test.AddError(TEXT("Failed to allocate transient full-towpath tile set asset."));
+			return nullptr;
+		}
+
+		TileSetAsset->Tiles = {FullTowpathTile};
+		FString Error;
+		if (!TileSetAsset->BuildCompatibilityCache(Error))
+		{
+			Test.AddError(FString::Printf(TEXT("Failed to build full-towpath compatibility cache: %s"), *Error));
+			return nullptr;
+		}
+
+		return TileSetAsset;
+	}
+
 	FHexWfcSolveConfig MakeM1RelaxedSolveConfig()
 	{
 		FHexWfcSolveConfig Config;
@@ -869,6 +900,123 @@ bool FCanalM1SplineAndSocketSmokeTest::RunTest(const FString& Parameters)
 		TileSetAsset->GetCompatibilityTable(),
 		Generator->LastSolveResult.Cells);
 	TestTrue(TEXT("All neighboring sockets should match in solved output."), bAdjacencyValid);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalM1PrototypeMaterialProfilesTest,
+	"UEGame.Canal.M1.MaterialProfiles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalM1PrototypeMaterialProfilesTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = BuildFullWaterTileSetAsset(*this);
+	if (!TileSetAsset)
+	{
+		return false;
+	}
+
+	ACanalTopologyGeneratorActor* Generator = NewObject<ACanalTopologyGeneratorActor>(GetTransientPackage());
+	if (!Generator)
+	{
+		AddError(TEXT("Failed to allocate topology generator actor."));
+		return false;
+	}
+
+	Generator->TileSet = TileSetAsset;
+	Generator->GridConfig.Width = 8;
+	Generator->GridConfig.Height = 4;
+	Generator->SolveConfig = MakeM1RelaxedSolveConfig();
+	Generator->SolveConfig.Seed = 3100;
+	Generator->bGenerateSpline = false;
+	Generator->bSpawnTowpathProps = false;
+
+	Generator->GenerateTopology();
+	TestTrue(TEXT("Generator should solve for material profile test."), Generator->LastSolveResult.bSolved);
+
+	const FCanalResolvedMaterialProfile FirstWater = Generator->LastWaterMaterialRuntime;
+	const FCanalResolvedMaterialProfile FirstBank = Generator->LastBankMaterialRuntime;
+	const FCanalResolvedMaterialProfile FirstTowpath = Generator->LastTowpathMaterialRuntime;
+
+	Generator->GenerateTopology();
+	TestTrue(
+		TEXT("Material randomization should be deterministic for the same seed (water wetness)."),
+		FMath::IsNearlyEqual(FirstWater.Wetness, Generator->LastWaterMaterialRuntime.Wetness, KINDA_SMALL_NUMBER));
+	TestTrue(
+		TEXT("Material randomization should be deterministic for the same seed (water tint)."),
+		FirstWater.Tint.Equals(Generator->LastWaterMaterialRuntime.Tint, KINDA_SMALL_NUMBER));
+
+	TestTrue(TEXT("Water wetness should be clamped to [0,1]."), FirstWater.Wetness >= 0.0f && FirstWater.Wetness <= 1.0f);
+	TestTrue(TEXT("Bank wetness should be clamped to [0,1]."), FirstBank.Wetness >= 0.0f && FirstBank.Wetness <= 1.0f);
+	TestTrue(TEXT("Towpath wetness should be clamped to [0,1]."), FirstTowpath.Wetness >= 0.0f && FirstTowpath.Wetness <= 1.0f);
+
+	const bool bDistinctBankAndTowpath =
+		!FirstBank.Tint.Equals(FirstTowpath.Tint, 0.01f) ||
+		!FMath::IsNearlyEqual(FirstBank.Wetness, FirstTowpath.Wetness, 0.01f);
+	TestTrue(TEXT("Bank and towpath profiles should resolve to distinct prototype material settings."), bDistinctBankAndTowpath);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalM1TowpathPropCoverageTest,
+	"UEGame.Canal.M1.TowpathProps",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalM1TowpathPropCoverageTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = BuildFullTowpathTileSetAsset(*this);
+	if (!TileSetAsset)
+	{
+		return false;
+	}
+
+	ACanalTopologyGeneratorActor* Generator = NewObject<ACanalTopologyGeneratorActor>(GetTransientPackage());
+	if (!Generator)
+	{
+		AddError(TEXT("Failed to allocate topology generator actor."));
+		return false;
+	}
+
+	Generator->TileSet = TileSetAsset;
+	Generator->GridConfig.Width = 16;
+	Generator->GridConfig.Height = 8;
+	Generator->SolveConfig = MakeM1RelaxedSolveConfig();
+	Generator->SolveConfig.Seed = 4200;
+	Generator->bGenerateSpline = false;
+	Generator->bSpawnTowpathProps = true;
+	Generator->TowpathPropDensity = 1.0f;
+
+	Generator->GenerateTopology();
+	TestTrue(TEXT("Generator should solve for prop placement test."), Generator->LastSolveResult.bSolved);
+	TestTrue(TEXT("At least 8 towpath props should spawn."), Generator->GetTotalTowpathPropCount() >= 8);
+
+	const TArray<FName> RequiredTags = {
+		FName(TEXT("bollard")),
+		FName(TEXT("ring")),
+		FName(TEXT("sign")),
+		FName(TEXT("lamp")),
+		FName(TEXT("bench")),
+		FName(TEXT("reeds")),
+		FName(TEXT("bin")),
+		FName(TEXT("fence"))};
+
+	for (const FName Tag : RequiredTags)
+	{
+		TestTrue(
+			FString::Printf(TEXT("Coverage-first towpath prop placement should include tag '%s'."), *Tag.ToString()),
+			Generator->GetTowpathPropCountByTag(Tag) > 0);
+	}
+
+	TArray<FName> ReportedTags;
+	Generator->GetTowpathPropSemanticTags(ReportedTags);
+	for (const FName Tag : RequiredTags)
+	{
+		TestTrue(
+			FString::Printf(TEXT("Generator should expose semantic tag '%s' in definition list."), *Tag.ToString()),
+			ReportedTags.Contains(Tag));
+	}
 
 	return true;
 }

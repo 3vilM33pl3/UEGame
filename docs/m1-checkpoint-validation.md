@@ -16,7 +16,7 @@ What it runs:
 1. WFC batch reliability at 128 hex (`16x8`) in `m1_relaxed` profile.
 2. WFC batch reliability at 512 hex (`32x16`) in `m1_relaxed` profile.
 3. Perf capture on `StartMap` using `scripts/run_perf_capture.sh`.
-4. Automation test `UEGame.Canal.M1.SplineAndSockets`.
+4. Automation test bucket `UEGame.Canal.M1` (includes reliability, spline/socket, material profile, towpath prop checks).
 
 Outputs:
 
@@ -38,7 +38,7 @@ Environment overrides:
 - `M1_PERF_MAP` (default `/Game/StartMap`)
 - `M1_PERF_DURATION` (default `5`)
 - `M1_PERF_WARMUP` (default `1`)
-- `M1_AUTOMATION_FILTER` (default `UEGame.Canal.M1.SplineAndSockets`)
+- `M1_AUTOMATION_FILTER` (default `UEGame.Canal.M1`)
 
 ## Deck Manual Checklist (`3VI-273`)
 
@@ -62,12 +62,14 @@ Current M1 reliability validation profile is:
 - `AutoSelectBoundaryPorts=true`
 - `DisallowUnassignedBoundaryWater=false`
 
-Socket correctness and spline availability are validated by:
+Socket correctness, material profile determinism, and towpath prop coverage are validated by:
 
-- `UEGame.Canal.M1.SplineAndSockets`
+- `UEGame.Canal.M1`
 
-This test verifies:
+These tests verify:
 
 - topology solve succeeds
 - generated spline has at least two points
 - all neighboring solved sockets match
+- prototype material settings remain deterministic per seed and expose wetness/tint variation
+- towpath prop placement includes semantic coverage for: bollard, ring, sign, lamp, bench, reeds, bin, fence
