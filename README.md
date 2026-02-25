@@ -101,6 +101,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - Keep non-Unreal tools and clients under `External/`.
 - Tile schema / hex + WFC generator notes: `docs/canal-topology-tile-schema.md`.
 - Topology generator actor usage: `docs/canal-topology-generator-actor.md`.
+- WFC batch harness + CLI reports: `docs/hex-wfc-batch-harness.md` and `scripts/run_wfc_batch.sh`.
 
 ## Platform Validation Notes
 

@@ -112,6 +112,9 @@ This baseline directly supports:
 - connected-water validation checks
 - boundary half-segment prevention
 
+Batch reporting surfaces connected-water validation failures via
+`FHexWfcBatchStats::NumSingleWaterComponentFailures`.
+
 ## Asset Authoring Guidance
 
 For production content, create `UCanalTopologyTileSetAsset` assets and fill `Tiles` with the same schema.
