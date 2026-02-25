@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "CanalGen/CanalPrototypeTileSet.h"
+#include "CanalGen/CanalTopologyTileSetAsset.h"
 #include "CanalGen/CanalTopologyTileTypes.h"
 #include "CanalGen/HexGridTypes.h"
 #include "CanalGen/HexWfcSolver.h"
@@ -259,6 +260,185 @@ bool FHexWfcAutoBoundaryPortSelectionTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Auto selection should return resolved ports."), Result.bHasResolvedPorts);
 	TestTrue(TEXT("Resolved ports should be distinct cells."),
 		Result.ResolvedEntryPort.Coord != Result.ResolvedExitPort.Coord);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHexWfcSolveTimeBudgetTest,
+	"UEGame.Canal.WFC.TimeBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexWfcSolveTimeBudgetTest::RunTest(const FString& Parameters)
+{
+	FCanalTopologyTileDefinition FullWaterTile;
+	FullWaterTile.TileId = TEXT("all_water_time_budget");
+	FullWaterTile.Sockets = {
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water};
+	FullWaterTile.Weight = 1.0f;
+	FullWaterTile.bAllowAsBoundaryPort = true;
+
+	FCanalTileCompatibilityTable Compatibility;
+	FString Error;
+	if (!Compatibility.Build({FullWaterTile}, &Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build compatibility: %s"), *Error));
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 64;
+	Grid.Height = 64;
+
+	FHexWfcSolveConfig Config;
+	Config.Seed = 7;
+	Config.MaxAttempts = 4;
+	Config.MaxSolveTimeSeconds = 0.000001f;
+	Config.bDisallowUnassignedBoundaryWater = false;
+
+	const FHexWfcSolver Solver(Compatibility);
+	const FHexWfcSolveResult Result = Solver.Solve(Grid, Config);
+	TestFalse(TEXT("Solver should stop on tiny time budget."), Result.bSolved);
+	TestTrue(TEXT("Result should report time budget exceeded."), Result.bTimeBudgetExceeded);
+	TestTrue(TEXT("Failure message should mention time budget."), Result.Message.Contains(TEXT("time budget"), ESearchCase::IgnoreCase));
+	TestTrue(TEXT("Solve time should be non-negative."), Result.SolveTimeSeconds >= 0.0f);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHexWfcBatchHarnessStatsTest,
+	"UEGame.Canal.WFC.BatchHarnessStats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexWfcBatchHarnessStatsTest::RunTest(const FString& Parameters)
+{
+	FCanalTopologyTileDefinition FullWaterTile;
+	FullWaterTile.TileId = TEXT("all_water_batch");
+	FullWaterTile.Sockets = {
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water,
+		ECanalSocketType::Water};
+	FullWaterTile.Weight = 1.0f;
+	FullWaterTile.bAllowAsBoundaryPort = true;
+
+	UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+	TileSetAsset->Tiles = {FullWaterTile};
+
+	FString Error;
+	if (!TileSetAsset->BuildCompatibilityCache(Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build tile set compatibility: %s"), *Error));
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 3;
+	Grid.Height = 2;
+
+	FHexWfcSolveConfig Config;
+	Config.MaxAttempts = 1;
+	Config.bDisallowUnassignedBoundaryWater = false;
+
+	FHexWfcBatchConfig BatchConfig;
+	BatchConfig.StartSeed = 100;
+	BatchConfig.NumSeeds = 6;
+
+	const FHexWfcBatchStats Stats = UCanalWfcBlueprintLibrary::RunHexWfcBatch(TileSetAsset, Grid, Config, BatchConfig);
+	TestEqual(TEXT("Batch should process all requested seeds."), Stats.NumSeedsProcessed, BatchConfig.NumSeeds);
+	TestEqual(TEXT("All batch runs should solve with full-water tile."), Stats.NumSolved, BatchConfig.NumSeeds);
+	TestEqual(TEXT("No failed runs expected."), Stats.NumFailed, 0);
+
+	const FHexWfcAttemptHistogramBin* AttemptBin = Stats.AttemptHistogram.FindByPredicate([](const FHexWfcAttemptHistogramBin& Bin)
+	{
+		return Bin.Attempts == 1;
+	});
+	TestTrue(TEXT("Histogram should include attempt=1 bin."), AttemptBin != nullptr);
+	TestEqual(TEXT("attempt=1 count should match seeds."), AttemptBin ? AttemptBin->Count : -1, BatchConfig.NumSeeds);
+
+	const FHexWfcTileHistogramBin* TileBin = Stats.TileHistogram.FindByPredicate([](const FHexWfcTileHistogramBin& Bin)
+	{
+		return Bin.TileId == FName(TEXT("all_water_batch"));
+	});
+	const int32 ExpectedTileCount = Grid.Width * Grid.Height * BatchConfig.NumSeeds;
+	TestTrue(TEXT("Tile histogram should include generated tile ID."), TileBin != nullptr);
+	TestEqual(TEXT("Tile histogram count should match solved cells."), TileBin ? TileBin->Count : -1, ExpectedTileCount);
+	TestTrue(TEXT("Single-tile histogram fraction should be 1."), TileBin && FMath::IsNearlyEqual(TileBin->Fraction, 1.0f, KINDA_SMALL_NUMBER));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHexWfcBiomeWeightMultipliersTest,
+	"UEGame.Canal.WFC.BiomeWeightMultipliers",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexWfcBiomeWeightMultipliersTest::RunTest(const FString& Parameters)
+{
+	FCanalTopologyTileDefinition TileA;
+	TileA.TileId = TEXT("tile_a");
+	TileA.Sockets = {
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank};
+	TileA.Weight = 1.0f;
+
+	FCanalTopologyTileDefinition TileB = TileA;
+	TileB.TileId = TEXT("tile_b");
+
+	UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+	TileSetAsset->Tiles = {TileA, TileB};
+
+	FString Error;
+	if (!TileSetAsset->BuildCompatibilityCache(Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build tile set compatibility: %s"), *Error));
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 1;
+	Grid.Height = 1;
+
+	FHexWfcSolveConfig Config;
+	Config.MaxAttempts = 1;
+	Config.BiomeProfile = TEXT("test_bias");
+	Config.bDisallowUnassignedBoundaryWater = true;
+
+	FHexTileWeightMultiplier DisableA;
+	DisableA.TileId = TileA.TileId;
+	DisableA.Multiplier = 0.0f;
+	Config.BiomeWeightMultipliers = {DisableA};
+
+	FHexWfcBatchConfig BatchConfig;
+	BatchConfig.StartSeed = 1;
+	BatchConfig.NumSeeds = 48;
+
+	const FHexWfcBatchStats Stats = UCanalWfcBlueprintLibrary::RunHexWfcBatch(TileSetAsset, Grid, Config, BatchConfig);
+	TestEqual(TEXT("Batch should solve all biased runs."), Stats.NumSolved, BatchConfig.NumSeeds);
+
+	const FHexWfcTileHistogramBin* TileABin = Stats.TileHistogram.FindByPredicate([](const FHexWfcTileHistogramBin& Bin)
+	{
+		return Bin.TileId == FName(TEXT("tile_a"));
+	});
+	const FHexWfcTileHistogramBin* TileBBin = Stats.TileHistogram.FindByPredicate([](const FHexWfcTileHistogramBin& Bin)
+	{
+		return Bin.TileId == FName(TEXT("tile_b"));
+	});
+
+	TestTrue(TEXT("Disabled tile_a should not be selected."), TileABin == nullptr || TileABin->Count == 0);
+	TestTrue(TEXT("Biased tile_b should be selected for every cell."), TileBBin != nullptr && TileBBin->Count == BatchConfig.NumSeeds);
 
 	return true;
 }

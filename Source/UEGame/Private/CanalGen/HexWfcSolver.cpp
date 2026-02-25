@@ -1,5 +1,6 @@
 #include "CanalGen/HexWfcSolver.h"
 
+#include "Algo/Sort.h"
 #include "Containers/Queue.h"
 
 bool FHexWfcGridConfig::EnsureValid(FString& OutError) const
@@ -26,6 +27,7 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 {
 	FHexWfcSolveResult FinalResult;
 	FinalResult.TotalCells = Grid.Width * Grid.Height;
+	FinalResult.BiomeProfile = Config.BiomeProfile;
 
 	FString GridError;
 	if (!Grid.EnsureValid(GridError))
@@ -46,10 +48,65 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 		return FinalResult;
 	}
 
+	int32 MaxTileIndex = INDEX_NONE;
+	for (const FCanalTileVariantKey& Variant : Compatibility.GetAllVariants())
+	{
+		MaxTileIndex = FMath::Max(MaxTileIndex, Variant.TileIndex);
+	}
+	TArray<float> TileWeightScales;
+	if (MaxTileIndex >= 0)
+	{
+		TileWeightScales.Init(1.0f, MaxTileIndex + 1);
+	}
+
+	TMap<FName, float> MultiplierByTileId;
+	for (const FHexTileWeightMultiplier& Entry : Config.BiomeWeightMultipliers)
+	{
+		if (!Entry.TileId.IsNone())
+		{
+			MultiplierByTileId.Add(Entry.TileId, FMath::Max(0.0f, Entry.Multiplier));
+		}
+	}
+
+	for (int32 TileIndex = 0; TileIndex < TileWeightScales.Num(); ++TileIndex)
+	{
+		if (const FCanalTopologyTileDefinition* Tile = Compatibility.GetTileDefinition(TileIndex))
+		{
+			if (const float* Multiplier = MultiplierByTileId.Find(Tile->TileId))
+			{
+				TileWeightScales[TileIndex] = *Multiplier;
+			}
+		}
+	}
+
+	const double SolveStartTime = FPlatformTime::Seconds();
+	const auto GetElapsedSeconds = [&]() -> float
+	{
+		return static_cast<float>(FPlatformTime::Seconds() - SolveStartTime);
+	};
+
+	const auto IsTimeBudgetExceeded = [&](float& OutElapsed) -> bool
+	{
+		OutElapsed = GetElapsedSeconds();
+		return Config.MaxSolveTimeSeconds > 0.0f && OutElapsed >= Config.MaxSolveTimeSeconds;
+	};
+
 	FString LastFailure = TEXT("Unknown failure.");
+	bool bAnyContradiction = false;
+	bool bTimeBudgetExceeded = false;
+	int32 AttemptsUsed = 0;
 
 	for (int32 Attempt = 1; Attempt <= Config.MaxAttempts; ++Attempt)
 	{
+		AttemptsUsed = Attempt;
+		float ElapsedSeconds = 0.0f;
+		if (IsTimeBudgetExceeded(ElapsedSeconds))
+		{
+			bTimeBudgetExceeded = true;
+			LastFailure = FString::Printf(TEXT("Solve time budget exceeded before attempt %d (limit %.3fs)."), Attempt, Config.MaxSolveTimeSeconds);
+			break;
+		}
+
 		TMap<FHexAxialCoord, FCellState> States;
 		States.Reserve(FinalResult.TotalCells);
 		for (int32 R = 0; R < Grid.Height; ++R)
@@ -66,11 +123,21 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 		FHexWfcSolveResult AttemptResult;
 		AttemptResult.TotalCells = FinalResult.TotalCells;
 		AttemptResult.AttemptsUsed = Attempt;
+		AttemptResult.BiomeProfile = Config.BiomeProfile;
 
 		bool bAttemptContradiction = false;
 
 		while (true)
 		{
+			if (IsTimeBudgetExceeded(ElapsedSeconds))
+			{
+				bAttemptContradiction = true;
+				bTimeBudgetExceeded = true;
+				AttemptResult.bTimeBudgetExceeded = true;
+				AttemptResult.Message = FString::Printf(TEXT("Solve time budget exceeded (limit %.3fs)."), Config.MaxSolveTimeSeconds);
+				break;
+			}
+
 			FHexAxialCoord TargetCell;
 			int32 Entropy = 0;
 			if (!SelectLowestEntropyCell(States, TargetCell, Entropy))
@@ -79,7 +146,7 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 			}
 
 			FCellState& TargetState = States[TargetCell];
-			const FCanalTileVariantKey Picked = ChooseVariant(TargetState.Candidates, Random);
+			const FCanalTileVariantKey Picked = ChooseVariant(TargetState.Candidates, Random, TileWeightScales);
 			TargetState.Candidates = {Picked};
 
 			TQueue<FHexAxialCoord> Queue;
@@ -87,6 +154,15 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 
 			while (!Queue.IsEmpty())
 			{
+				if (IsTimeBudgetExceeded(ElapsedSeconds))
+				{
+					bAttemptContradiction = true;
+					bTimeBudgetExceeded = true;
+					AttemptResult.bTimeBudgetExceeded = true;
+					AttemptResult.Message = FString::Printf(TEXT("Solve time budget exceeded (limit %.3fs)."), Config.MaxSolveTimeSeconds);
+					break;
+				}
+
 				if (AttemptResult.PropagationSteps >= Config.MaxPropagationSteps)
 				{
 					bAttemptContradiction = true;
@@ -154,7 +230,13 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 
 		if (bAttemptContradiction)
 		{
+			bAnyContradiction |= AttemptResult.bContradiction;
+			AttemptResult.SolveTimeSeconds = GetElapsedSeconds();
 			LastFailure = FString::Printf(TEXT("Attempt %d failed: %s"), Attempt, *AttemptResult.Message);
+			if (AttemptResult.bTimeBudgetExceeded)
+			{
+				break;
+			}
 			continue;
 		}
 
@@ -194,13 +276,16 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 		AttemptResult.ResolvedEntryPort = ResolvedEntryPort;
 		AttemptResult.ResolvedExitPort = ResolvedExitPort;
 		AttemptResult.bHasResolvedPorts = ResolvedEntryPort.bEnabled && ResolvedExitPort.bEnabled;
+		AttemptResult.SolveTimeSeconds = GetElapsedSeconds();
 		return AttemptResult;
-		}
+	}
 
 	FinalResult.bSolved = false;
-	FinalResult.bContradiction = true;
-	FinalResult.AttemptsUsed = Config.MaxAttempts;
+	FinalResult.bContradiction = bAnyContradiction;
+	FinalResult.bTimeBudgetExceeded = bTimeBudgetExceeded;
+	FinalResult.AttemptsUsed = AttemptsUsed;
 	FinalResult.Message = LastFailure;
+	FinalResult.SolveTimeSeconds = GetElapsedSeconds();
 	return FinalResult;
 }
 
@@ -248,7 +333,10 @@ bool FHexWfcSolver::SelectLowestEntropyCell(
 	return true;
 }
 
-FCanalTileVariantKey FHexWfcSolver::ChooseVariant(const TArray<FCanalTileVariantKey>& Candidates, FRandomStream& Random) const
+FCanalTileVariantKey FHexWfcSolver::ChooseVariant(
+	const TArray<FCanalTileVariantKey>& Candidates,
+	FRandomStream& Random,
+	const TArray<float>& TileWeightScales) const
 {
 	check(Candidates.Num() > 0);
 
@@ -267,7 +355,8 @@ FCanalTileVariantKey FHexWfcSolver::ChooseVariant(const TArray<FCanalTileVariant
 	{
 		if (const FCanalTopologyTileDefinition* Tile = Compatibility.GetTileDefinition(Candidate.TileIndex))
 		{
-			TotalWeight += FMath::Max(0.0f, Tile->Weight);
+			const float Scale = TileWeightScales.IsValidIndex(Candidate.TileIndex) ? FMath::Max(0.0f, TileWeightScales[Candidate.TileIndex]) : 1.0f;
+			TotalWeight += FMath::Max(0.0f, Tile->Weight) * Scale;
 		}
 	}
 
@@ -281,7 +370,8 @@ FCanalTileVariantKey FHexWfcSolver::ChooseVariant(const TArray<FCanalTileVariant
 	for (const FCanalTileVariantKey& Candidate : Sorted)
 	{
 		const FCanalTopologyTileDefinition* Tile = Compatibility.GetTileDefinition(Candidate.TileIndex);
-		const float Weight = Tile ? FMath::Max(0.0f, Tile->Weight) : 0.0f;
+		const float Scale = TileWeightScales.IsValidIndex(Candidate.TileIndex) ? FMath::Max(0.0f, TileWeightScales[Candidate.TileIndex]) : 1.0f;
+		const float Weight = Tile ? FMath::Max(0.0f, Tile->Weight) * Scale : 0.0f;
 		Cumulative += Weight;
 		if (Pick <= Cumulative)
 		{
@@ -865,4 +955,133 @@ FHexWfcSolveResult UCanalWfcBlueprintLibrary::SolveHexWfc(
 
 	const FHexWfcSolver Solver(Compatibility);
 	return Solver.Solve(Grid, Config);
+}
+
+FHexWfcBatchStats UCanalWfcBlueprintLibrary::RunHexWfcBatch(
+	const UCanalTopologyTileSetAsset* TileSet,
+	const FHexWfcGridConfig& Grid,
+	const FHexWfcSolveConfig& ConfigTemplate,
+	const FHexWfcBatchConfig& BatchConfig)
+{
+	FHexWfcBatchStats Stats;
+	Stats.NumSeedsRequested = FMath::Max(0, BatchConfig.NumSeeds);
+
+	if (!TileSet || Stats.NumSeedsRequested == 0)
+	{
+		return Stats;
+	}
+
+	const FCanalTileCompatibilityTable& Compatibility = TileSet->GetCompatibilityTable();
+	if (!Compatibility.IsBuilt())
+	{
+		return Stats;
+	}
+
+	const FHexWfcSolver Solver(Compatibility);
+	const double BatchStart = FPlatformTime::Seconds();
+
+	const auto GetBatchElapsedSeconds = [&]() -> float
+	{
+		return static_cast<float>(FPlatformTime::Seconds() - BatchStart);
+	};
+
+	TMap<int32, int32> AttemptCounts;
+	TMap<FName, int32> TileCounts;
+	int64 TotalAttempts = 0;
+	float TotalSolveTimeSeconds = 0.0f;
+	int32 TotalSolvedCells = 0;
+
+	for (int32 SeedOffset = 0; SeedOffset < Stats.NumSeedsRequested; ++SeedOffset)
+	{
+		const float BatchElapsed = GetBatchElapsedSeconds();
+		if (BatchConfig.MaxBatchTimeSeconds > 0.0f && BatchElapsed >= BatchConfig.MaxBatchTimeSeconds)
+		{
+			Stats.bBatchTimeLimitExceeded = true;
+			break;
+		}
+
+		FHexWfcSolveConfig Config = ConfigTemplate;
+		Config.Seed = BatchConfig.StartSeed + SeedOffset;
+
+		const FHexWfcSolveResult Result = Solver.Solve(Grid, Config);
+		++Stats.NumSeedsProcessed;
+		TotalAttempts += Result.AttemptsUsed;
+		TotalSolveTimeSeconds += Result.SolveTimeSeconds;
+		AttemptCounts.FindOrAdd(Result.AttemptsUsed) += 1;
+
+		if (Result.bSolved)
+		{
+			++Stats.NumSolved;
+			for (const FHexWfcCellResult& Cell : Result.Cells)
+			{
+				TileCounts.FindOrAdd(Cell.Variant.TileId) += 1;
+				++TotalSolvedCells;
+			}
+		}
+		else
+		{
+			++Stats.NumFailed;
+		}
+
+		if (Result.bContradiction)
+		{
+			++Stats.NumContradictions;
+		}
+		if (Result.bTimeBudgetExceeded)
+		{
+			++Stats.NumTimeBudgetExceeded;
+		}
+	}
+
+	if (Stats.NumSeedsProcessed > 0)
+	{
+		Stats.ContradictionRate = static_cast<float>(Stats.NumContradictions) / static_cast<float>(Stats.NumSeedsProcessed);
+		Stats.AverageAttemptsUsed = static_cast<float>(TotalAttempts) / static_cast<float>(Stats.NumSeedsProcessed);
+		Stats.AverageSolveTimeSeconds = TotalSolveTimeSeconds / static_cast<float>(Stats.NumSeedsProcessed);
+	}
+
+	Stats.ElapsedBatchTimeSeconds = GetBatchElapsedSeconds();
+
+	TArray<TPair<int32, int32>> AttemptPairs;
+	for (const TPair<int32, int32>& Pair : AttemptCounts)
+	{
+		AttemptPairs.Add(Pair);
+	}
+	AttemptPairs.Sort([](const TPair<int32, int32>& A, const TPair<int32, int32>& B)
+	{
+		return A.Key < B.Key;
+	});
+
+	for (const TPair<int32, int32>& Pair : AttemptPairs)
+	{
+		FHexWfcAttemptHistogramBin Bin;
+		Bin.Attempts = Pair.Key;
+		Bin.Count = Pair.Value;
+		Stats.AttemptHistogram.Add(Bin);
+	}
+
+	TArray<TPair<FName, int32>> TilePairs;
+	for (const TPair<FName, int32>& Pair : TileCounts)
+	{
+		TilePairs.Add(Pair);
+	}
+	TilePairs.Sort([](const TPair<FName, int32>& A, const TPair<FName, int32>& B)
+	{
+		if (A.Value != B.Value)
+		{
+			return A.Value > B.Value;
+		}
+		return A.Key.LexicalLess(B.Key);
+	});
+
+	for (const TPair<FName, int32>& Pair : TilePairs)
+	{
+		FHexWfcTileHistogramBin Bin;
+		Bin.TileId = Pair.Key;
+		Bin.Count = Pair.Value;
+		Bin.Fraction = TotalSolvedCells > 0 ? static_cast<float>(Pair.Value) / static_cast<float>(TotalSolvedCells) : 0.0f;
+		Stats.TileHistogram.Add(Bin);
+	}
+
+	return Stats;
 }
