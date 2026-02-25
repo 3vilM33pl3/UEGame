@@ -104,6 +104,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - Topology generator actor usage: `docs/canal-topology-generator-actor.md`.
 - Scenario runner and capture lifecycle hooks: `docs/canal-scenario-runner.md`.
 - Seed session flow and local seed history: `docs/canal-seed-session-flow.md`.
+- Deck UI v0 controls: `docs/canal-deck-ui-v0.md`.
 - WFC batch harness + CLI reports: `docs/hex-wfc-batch-harness.md` and `scripts/run_wfc_batch.sh`.
 
 ## Platform Validation Notes
