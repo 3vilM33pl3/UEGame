@@ -73,14 +73,26 @@ void ACanalTopologyGeneratorActor::GenerateTopology()
 
 	RefreshInstanceMeshes();
 
-	LastSolveResult = UCanalWfcBlueprintLibrary::SolveHexWfc(TileSet, GridConfig, SolveConfig);
+	const int32 MasterSeed = SolveConfig.Seed;
+	const int32 TopologySeed = bDeriveSeedStreamsFromMaster ? DeriveDeterministicStreamSeed(MasterSeed, 0x544F504Fu) : MasterSeed; // 'TOPO'
+	const int32 DressingSeed = bDeriveSeedStreamsFromMaster ? DeriveDeterministicStreamSeed(MasterSeed, 0x44524553u) : MasterSeed; // 'DRES'
+
+	FHexWfcSolveConfig TopologySolveConfig = SolveConfig;
+	TopologySolveConfig.Seed = TopologySeed;
+
+	LastGenerationMetadata = FCanalGenerationMetadata();
+	LastGenerationMetadata.MasterSeed = MasterSeed;
+	LastGenerationMetadata.TopologySeed = TopologySeed;
+	LastGenerationMetadata.DressingSeed = DressingSeed;
+	LastGenerationMetadata.BiomeProfile = TopologySolveConfig.BiomeProfile;
+
+	LastSolveResult = UCanalWfcBlueprintLibrary::SolveHexWfc(TileSet, GridConfig, TopologySolveConfig);
 	if (!LastSolveResult.bSolved)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Canal solve failed: %s"), *LastSolveResult.Message);
 		return;
 	}
 
-	LastGenerationMetadata = FCanalGenerationMetadata();
 	if (LastSolveResult.bHasResolvedPorts)
 	{
 		LastGenerationMetadata.bHasEntryPort = true;
@@ -90,10 +102,10 @@ void ACanalTopologyGeneratorActor::GenerateTopology()
 	}
 	else
 	{
-		LastGenerationMetadata.bHasEntryPort = SolveConfig.EntryPort.bEnabled;
-		LastGenerationMetadata.EntryPort = SolveConfig.EntryPort;
-		LastGenerationMetadata.bHasExitPort = SolveConfig.ExitPort.bEnabled;
-		LastGenerationMetadata.ExitPort = SolveConfig.ExitPort;
+		LastGenerationMetadata.bHasEntryPort = TopologySolveConfig.EntryPort.bEnabled;
+		LastGenerationMetadata.EntryPort = TopologySolveConfig.EntryPort;
+		LastGenerationMetadata.bHasExitPort = TopologySolveConfig.ExitPort.bEnabled;
+		LastGenerationMetadata.ExitPort = TopologySolveConfig.ExitPort;
 	}
 
 	const FCanalTileCompatibilityTable& Compatibility = TileSet->GetCompatibilityTable();
@@ -476,4 +488,21 @@ bool ACanalTopologyGeneratorActor::IsWaterCell(const FCanalTileCompatibilityTabl
 bool ACanalTopologyGeneratorActor::IsWaterLikeSocket(const ECanalSocketType Socket)
 {
 	return Socket == ECanalSocketType::Water || Socket == ECanalSocketType::Lock;
+}
+
+int32 ACanalTopologyGeneratorActor::DeriveDeterministicStreamSeed(const int32 MasterSeed, const uint32 StreamDiscriminator)
+{
+	uint32 Value = static_cast<uint32>(MasterSeed);
+	Value ^= StreamDiscriminator + 0x9E3779B9u + (Value << 6) + (Value >> 2);
+	Value ^= (Value >> 16);
+	Value *= 0x7FEB352Du;
+	Value ^= (Value >> 15);
+	Value *= 0x846CA68Bu;
+	Value ^= (Value >> 16);
+	if (Value == 0u)
+	{
+		Value = StreamDiscriminator ^ 0xA511E9B3u;
+	}
+
+	return static_cast<int32>(Value & 0x7FFFFFFFu);
 }

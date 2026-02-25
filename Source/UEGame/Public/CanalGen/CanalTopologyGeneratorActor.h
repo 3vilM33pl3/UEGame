@@ -18,6 +18,18 @@ struct UEGAME_API FCanalGenerationMetadata
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	int32 MasterSeed = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	int32 TopologySeed = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	int32 DressingSeed = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
+	FName BiomeProfile = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
 	bool bHasEntryPort = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|Generation")
@@ -68,6 +80,7 @@ private:
 		EHexDirection DirectionFromAToB) const;
 	bool IsWaterCell(const FCanalTileCompatibilityTable& Compatibility, const FHexWfcCellResult& Cell) const;
 	static bool IsWaterLikeSocket(ECanalSocketType Socket);
+	static int32 DeriveDeterministicStreamSeed(int32 MasterSeed, uint32 StreamDiscriminator);
 
 	UPROPERTY(VisibleAnywhere, Category = "Canal|Components")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -102,6 +115,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Generation")
 	FHexGridLayout GridLayout;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Generation|Determinism")
+	bool bDeriveSeedStreamsFromMaster = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Canal|Generation", meta = (ClampMin = "0.1"))
 	float SocketOffsetScale = 0.75f;
