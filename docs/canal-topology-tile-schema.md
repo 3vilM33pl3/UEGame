@@ -77,6 +77,9 @@ Includes 13 starter tiles:
 - `road_crossing`
 - `solid_bank`
 
+Detailed per-tile socket diagrams and weights:
+- `docs/canal-topology-tiles-v0.md`
+
 ## Compatibility Cache
 
 Use `FCanalTileCompatibilityTable` to precompute legal adjacencies.

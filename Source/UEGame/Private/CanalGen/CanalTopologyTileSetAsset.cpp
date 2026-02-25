@@ -1,9 +1,27 @@
 #include "CanalGen/CanalTopologyTileSetAsset.h"
 
+#include "CanalGen/CanalPrototypeTileSet.h"
+
 bool UCanalTopologyTileSetAsset::BuildCompatibilityCache(FString& OutError)
 {
 	bCompatibilityBuilt = Compatibility.Build(Tiles, &OutError);
 	return bCompatibilityBuilt;
+}
+
+void UCanalTopologyTileSetAsset::PopulateWithPrototypeV0(const bool bRebuildCompatibility)
+{
+	Tiles = FCanalPrototypeTileSet::BuildV0();
+
+	if (bRebuildCompatibility)
+	{
+		FString IgnoredError;
+		bCompatibilityBuilt = Compatibility.Build(Tiles, &IgnoredError);
+	}
+	else
+	{
+		bCompatibilityBuilt = false;
+		Compatibility = FCanalTileCompatibilityTable();
+	}
 }
 
 bool UCanalTopologyTileSetAsset::IsCompatibilityCacheBuilt() const

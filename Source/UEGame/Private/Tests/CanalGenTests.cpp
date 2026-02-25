@@ -75,6 +75,48 @@ bool FCanalTileCompatibilityBuildTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalPrototypeTileSetCoverageTest,
+	"UEGame.Canal.Tile.PrototypeV0Coverage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalPrototypeTileSetCoverageTest::RunTest(const FString& Parameters)
+{
+	const TArray<FCanalTopologyTileDefinition> Tiles = FCanalPrototypeTileSet::BuildV0();
+	TestTrue(TEXT("Prototype v0 tile count should be in 10-20 range."), Tiles.Num() >= 10 && Tiles.Num() <= 20);
+
+	auto HasTile = [&Tiles](const TCHAR* TileId) -> bool
+	{
+		return Tiles.ContainsByPredicate([&](const FCanalTopologyTileDefinition& Tile)
+		{
+			return Tile.TileId == FName(TileId);
+		});
+	};
+
+	TestTrue(TEXT("Has straight tile."), HasTile(TEXT("water_straight_ew")));
+	TestTrue(TEXT("Has gentle bend tile."), HasTile(TEXT("water_bend_gentle")));
+	TestTrue(TEXT("Has hard bend tile."), HasTile(TEXT("water_bend_hard")));
+	TestTrue(TEXT("Has junction tile."), HasTile(TEXT("water_t_junction")));
+	TestTrue(TEXT("Has lock boundary tile."), HasTile(TEXT("lock_gate")));
+
+	const FCanalTopologyTileDefinition* LockGate = Tiles.FindByPredicate([](const FCanalTopologyTileDefinition& Tile)
+	{
+		return Tile.TileId == FName(TEXT("lock_gate"));
+	});
+	TestTrue(TEXT("lock_gate should allow boundary port usage."), LockGate && LockGate->bAllowAsBoundaryPort);
+
+	for (const FCanalTopologyTileDefinition& Tile : Tiles)
+	{
+		FString ValidationError;
+		const bool bValid = Tile.EnsureValid(ValidationError);
+		TestTrue(
+			FString::Printf(TEXT("Tile %s should validate (%s)."), *Tile.TileId.ToString(), *ValidationError),
+			bValid);
+	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FCanalTileCompatibilityDescribeTest,
 	"UEGame.Canal.Tile.CompatibilityDescribe",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

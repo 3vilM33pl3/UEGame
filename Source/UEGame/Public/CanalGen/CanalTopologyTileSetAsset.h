@@ -17,6 +17,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Canal|TileSet")
 	bool BuildCompatibilityCache(FString& OutError);
 
+	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Canal|TileSet")
+	void PopulateWithPrototypeV0(bool bRebuildCompatibility = true);
+
 	UFUNCTION(BlueprintPure, Category = "Canal|TileSet")
 	bool IsCompatibilityCacheBuilt() const;
 
