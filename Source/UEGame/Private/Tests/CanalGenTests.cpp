@@ -289,6 +289,102 @@ bool FHexWfcAutoBoundaryPortSelectionTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHexWfcSingleComponentValidationFailureTest,
+	"UEGame.Canal.WFC.SingleComponentValidationFailure",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexWfcSingleComponentValidationFailureTest::RunTest(const FString& Parameters)
+{
+	FCanalTopologyTileDefinition IsolatedWaterTile;
+	IsolatedWaterTile.TileId = TEXT("isolated_water");
+	IsolatedWaterTile.Sockets = {
+		ECanalSocketType::Water,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank};
+	IsolatedWaterTile.Weight = 1.0f;
+
+	FCanalTileCompatibilityTable Compatibility;
+	FString Error;
+	if (!Compatibility.Build({IsolatedWaterTile}, &Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build isolated-water compatibility: %s"), *Error));
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 1;
+	Grid.Height = 2;
+
+	FHexWfcSolveConfig Config;
+	Config.MaxAttempts = 2;
+	Config.bRequireSingleWaterComponent = true;
+	Config.bDisallowUnassignedBoundaryWater = false;
+
+	const FHexWfcSolver Solver(Compatibility);
+	const FHexWfcSolveResult Result = Solver.Solve(Grid, Config);
+	TestFalse(TEXT("Solver should reject disconnected water components."), Result.bSolved);
+	TestTrue(TEXT("Result should classify failure as single-component validation."), Result.bFailedSingleWaterComponent);
+	TestTrue(TEXT("Failure message should mention connected component."),
+		Result.Message.Contains(TEXT("connected component"), ESearchCase::IgnoreCase));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHexWfcBatchSingleComponentFailureStatsTest,
+	"UEGame.Canal.WFC.BatchSingleComponentFailureStats",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHexWfcBatchSingleComponentFailureStatsTest::RunTest(const FString& Parameters)
+{
+	FCanalTopologyTileDefinition IsolatedWaterTile;
+	IsolatedWaterTile.TileId = TEXT("isolated_water_batch");
+	IsolatedWaterTile.Sockets = {
+		ECanalSocketType::Water,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank,
+		ECanalSocketType::Bank};
+	IsolatedWaterTile.Weight = 1.0f;
+
+	UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+	TileSetAsset->Tiles = {IsolatedWaterTile};
+
+	FString Error;
+	if (!TileSetAsset->BuildCompatibilityCache(Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build tile set compatibility: %s"), *Error));
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 1;
+	Grid.Height = 2;
+
+	FHexWfcSolveConfig Config;
+	Config.MaxAttempts = 1;
+	Config.bRequireSingleWaterComponent = true;
+	Config.bDisallowUnassignedBoundaryWater = false;
+
+	FHexWfcBatchConfig BatchConfig;
+	BatchConfig.StartSeed = 1000;
+	BatchConfig.NumSeeds = 5;
+
+	const FHexWfcBatchStats Stats = UCanalWfcBlueprintLibrary::RunHexWfcBatch(TileSetAsset, Grid, Config, BatchConfig);
+	TestEqual(TEXT("All seeds should be processed."), Stats.NumSeedsProcessed, BatchConfig.NumSeeds);
+	TestEqual(TEXT("Solved + failed should match processed seeds."), Stats.NumSolved + Stats.NumFailed, BatchConfig.NumSeeds);
+	TestTrue(TEXT("Batch should report at least one single-component validation failure."), Stats.NumSingleWaterComponentFailures > 0);
+	TestTrue(TEXT("Single-component failures cannot exceed failed runs."),
+		Stats.NumSingleWaterComponentFailures <= Stats.NumFailed);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHexWfcSolveTimeBudgetTest,
 	"UEGame.Canal.WFC.TimeBudget",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

@@ -94,6 +94,7 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 	FString LastFailure = TEXT("Unknown failure.");
 	bool bAnyContradiction = false;
 	bool bTimeBudgetExceeded = false;
+	bool bAnySingleComponentFailure = false;
 	int32 AttemptsUsed = 0;
 
 	for (int32 Attempt = 1; Attempt <= Config.MaxAttempts; ++Attempt)
@@ -242,9 +243,11 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 
 		FHexBoundaryPort ResolvedEntryPort;
 		FHexBoundaryPort ResolvedExitPort;
+		bool bFailedSingleWaterComponent = false;
 		FString ValidationError;
-		if (!ValidateSolvedState(States, Grid, Config, ResolvedEntryPort, ResolvedExitPort, ValidationError))
+		if (!ValidateSolvedState(States, Grid, Config, ResolvedEntryPort, ResolvedExitPort, bFailedSingleWaterComponent, ValidationError))
 		{
+			bAnySingleComponentFailure |= bFailedSingleWaterComponent;
 			LastFailure = FString::Printf(TEXT("Attempt %d rejected by validation: %s"), Attempt, *ValidationError);
 			continue;
 		}
@@ -283,6 +286,7 @@ FHexWfcSolveResult FHexWfcSolver::Solve(const FHexWfcGridConfig& Grid, const FHe
 	FinalResult.bSolved = false;
 	FinalResult.bContradiction = bAnyContradiction;
 	FinalResult.bTimeBudgetExceeded = bTimeBudgetExceeded;
+	FinalResult.bFailedSingleWaterComponent = bAnySingleComponentFailure;
 	FinalResult.AttemptsUsed = AttemptsUsed;
 	FinalResult.Message = LastFailure;
 	FinalResult.SolveTimeSeconds = GetElapsedSeconds();
@@ -407,8 +411,11 @@ bool FHexWfcSolver::ValidateSolvedState(
 	const FHexWfcSolveConfig& Config,
 	FHexBoundaryPort& OutResolvedEntry,
 	FHexBoundaryPort& OutResolvedExit,
+	bool& OutFailedSingleWaterComponent,
 	FString& OutError) const
 {
+	OutFailedSingleWaterComponent = false;
+
 	for (const TPair<FHexAxialCoord, FCellState>& Pair : States)
 	{
 		if (!Pair.Value.IsCollapsed())
@@ -459,6 +466,7 @@ bool FHexWfcSolver::ValidateSolvedState(
 	{
 		if (!HasSingleWaterComponent(States, Grid))
 		{
+			OutFailedSingleWaterComponent = true;
 			OutError = TEXT("Water graph has more than one connected component.");
 			return false;
 		}
@@ -1030,6 +1038,10 @@ FHexWfcBatchStats UCanalWfcBlueprintLibrary::RunHexWfcBatch(
 		if (Result.bTimeBudgetExceeded)
 		{
 			++Stats.NumTimeBudgetExceeded;
+		}
+		if (Result.bFailedSingleWaterComponent)
+		{
+			++Stats.NumSingleWaterComponentFailures;
 		}
 	}
 

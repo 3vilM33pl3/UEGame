@@ -136,6 +136,9 @@ struct UEGAME_API FHexWfcSolveResult
 	bool bTimeBudgetExceeded = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
+	bool bFailedSingleWaterComponent = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
 	float SolveTimeSeconds = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
@@ -221,6 +224,9 @@ struct UEGAME_API FHexWfcBatchStats
 	int32 NumTimeBudgetExceeded = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
+	int32 NumSingleWaterComponentFailures = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
 	float ContradictionRate = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Canal|WFC")
@@ -281,6 +287,7 @@ private:
 		const FHexWfcSolveConfig& Config,
 		FHexBoundaryPort& OutResolvedEntry,
 		FHexBoundaryPort& OutResolvedExit,
+		bool& OutFailedSingleWaterComponent,
 		FString& OutError) const;
 
 	bool ResolveBoundaryPorts(
