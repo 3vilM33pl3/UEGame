@@ -110,6 +110,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - WFC batch harness + CLI reports: `docs/hex-wfc-batch-harness.md` and `scripts/run_wfc_batch.sh`.
 - M0/M1 checkpoint validation runbook: `docs/m1-checkpoint-validation.md` and `scripts/run_m1_checkpoint.sh`.
 - M1 prototype materials + towpath prop hooks: `docs/m1-materials-and-props.md`.
+- Research note (AI prop blocking): `docs/research-triposr.md`.
 
 ## Platform Validation Notes
 
