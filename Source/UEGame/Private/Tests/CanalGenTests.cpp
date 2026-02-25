@@ -75,6 +75,30 @@ bool FCanalTileCompatibilityBuildTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalTileCompatibilityDescribeTest,
+	"UEGame.Canal.Tile.CompatibilityDescribe",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalTileCompatibilityDescribeTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+	TileSetAsset->Tiles = FCanalPrototypeTileSet::BuildV0();
+
+	FString Error;
+	if (!TileSetAsset->BuildCompatibilityCache(Error))
+	{
+		AddError(FString::Printf(TEXT("Failed to build compatibility cache: %s"), *Error));
+		return false;
+	}
+
+	const FString Description = TileSetAsset->DescribeCompatibility(0, 0, EHexDirection::East);
+	TestTrue(TEXT("Description should include compatibility summary."), Description.Contains(TEXT("compatible variants"), ESearchCase::IgnoreCase));
+	TestTrue(TEXT("Description should list tile IDs."), Description.Contains(TEXT("tileId"), ESearchCase::IgnoreCase));
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHexWfcSolveSmokeTest,
 	"UEGame.Canal.WFC.SolveSmoke",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
