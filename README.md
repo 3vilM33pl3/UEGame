@@ -108,6 +108,7 @@ Runtime launcher hardening (`UEGame.sh`):
 - Baseline perf capture command/report flow: `docs/perf-baseline-capture.md`.
   - Wrapper auto-enables `-NullRHI` in headless environments.
 - WFC batch harness + CLI reports: `docs/hex-wfc-batch-harness.md` and `scripts/run_wfc_batch.sh`.
+- M0/M1 checkpoint validation runbook: `docs/m1-checkpoint-validation.md` and `scripts/run_m1_checkpoint.sh`.
 
 ## Platform Validation Notes
 

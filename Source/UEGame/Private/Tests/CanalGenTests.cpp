@@ -10,6 +10,125 @@
 #include "CanalGen/HexGridTypes.h"
 #include "CanalGen/HexWfcSolver.h"
 
+namespace
+{
+	UCanalTopologyTileSetAsset* BuildPrototypeTileSetAsset(FAutomationTestBase& Test)
+	{
+		UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+		if (!TileSetAsset)
+		{
+			Test.AddError(TEXT("Failed to allocate transient tile set asset."));
+			return nullptr;
+		}
+
+		TileSetAsset->Tiles = FCanalPrototypeTileSet::BuildV0();
+		FString Error;
+		if (!TileSetAsset->BuildCompatibilityCache(Error))
+		{
+			Test.AddError(FString::Printf(TEXT("Failed to build prototype compatibility cache: %s"), *Error));
+			return nullptr;
+		}
+
+		return TileSetAsset;
+	}
+
+	UCanalTopologyTileSetAsset* BuildFullWaterTileSetAsset(FAutomationTestBase& Test)
+	{
+		FCanalTopologyTileDefinition FullWaterTile;
+		FullWaterTile.TileId = TEXT("all_water_m1_spline");
+		FullWaterTile.Sockets = {
+			ECanalSocketType::Water,
+			ECanalSocketType::Water,
+			ECanalSocketType::Water,
+			ECanalSocketType::Water,
+			ECanalSocketType::Water,
+			ECanalSocketType::Water};
+		FullWaterTile.Weight = 1.0f;
+		FullWaterTile.bAllowAsBoundaryPort = true;
+
+		UCanalTopologyTileSetAsset* TileSetAsset = NewObject<UCanalTopologyTileSetAsset>(GetTransientPackage());
+		if (!TileSetAsset)
+		{
+			Test.AddError(TEXT("Failed to allocate transient full-water tile set asset."));
+			return nullptr;
+		}
+
+		TileSetAsset->Tiles = {FullWaterTile};
+		FString Error;
+		if (!TileSetAsset->BuildCompatibilityCache(Error))
+		{
+			Test.AddError(FString::Printf(TEXT("Failed to build full-water compatibility cache: %s"), *Error));
+			return nullptr;
+		}
+
+		return TileSetAsset;
+	}
+
+	FHexWfcSolveConfig MakeM1RelaxedSolveConfig()
+	{
+		FHexWfcSolveConfig Config;
+		Config.MaxAttempts = 8;
+		Config.MaxPropagationSteps = 100000;
+		Config.bRequireEntryExitPath = false;
+		Config.bRequireSingleWaterComponent = false;
+		Config.bAutoSelectBoundaryPorts = true;
+		Config.bDisallowUnassignedBoundaryWater = false;
+		return Config;
+	}
+
+	bool ValidateSolvedAdjacency(
+		FAutomationTestBase& Test,
+		const FCanalTileCompatibilityTable& Compatibility,
+		const TArray<FHexWfcCellResult>& Cells)
+	{
+		for (const FHexWfcCellResult& Cell : Cells)
+		{
+			const FCanalTopologyTileDefinition* TileA = Compatibility.GetTileDefinition(Cell.Variant.TileIndex);
+			if (!TileA)
+			{
+				Test.AddError(FString::Printf(TEXT("Missing tile definition for variant index %d."), Cell.Variant.TileIndex));
+				return false;
+			}
+
+			for (int32 DirIndex = 0; DirIndex < 6; ++DirIndex)
+			{
+				const EHexDirection Direction = HexDirectionFromIndex(DirIndex);
+				const FHexAxialCoord NeighborCoord = Cell.Coord.Neighbor(Direction);
+				const FHexWfcCellResult* NeighborCell = Cells.FindByPredicate([&NeighborCoord](const FHexWfcCellResult& Candidate)
+				{
+					return Candidate.Coord == NeighborCoord;
+				});
+				if (!NeighborCell)
+				{
+					continue;
+				}
+
+				const FCanalTopologyTileDefinition* TileB = Compatibility.GetTileDefinition(NeighborCell->Variant.TileIndex);
+				if (!TileB)
+				{
+					Test.AddError(FString::Printf(TEXT("Missing neighbor tile definition for variant index %d."), NeighborCell->Variant.TileIndex));
+					return false;
+				}
+
+				const ECanalSocketType SocketA = TileA->GetSocket(Direction, Cell.Variant.RotationSteps);
+				const ECanalSocketType SocketB = TileB->GetSocket(OppositeHexDirection(Direction), NeighborCell->Variant.RotationSteps);
+				if (SocketA != SocketB)
+				{
+					Test.AddError(
+						FString::Printf(
+							TEXT("Socket mismatch at cell (%d,%d) toward direction %d."),
+							Cell.Coord.Q,
+							Cell.Coord.R,
+							DirIndex));
+					return false;
+				}
+			}
+		}
+
+		return true;
+	}
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHexCoordDistanceAndNeighborsTest,
 	"UEGame.Canal.Hex.DistanceAndNeighbors",
@@ -628,6 +747,128 @@ bool FHexWfcBiomeWeightMultipliersTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("Disabled tile_a should not be selected."), TileABin == nullptr || TileABin->Count == 0);
 	TestTrue(TEXT("Biased tile_b should be selected for every cell."), TileBBin != nullptr && TileBBin->Count == BatchConfig.NumSeeds);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalM1Reliability128RelaxedTest,
+	"UEGame.Canal.M1.Reliability128Relaxed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalM1Reliability128RelaxedTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = BuildPrototypeTileSetAsset(*this);
+	if (!TileSetAsset)
+	{
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 16;
+	Grid.Height = 8;
+
+	FHexWfcSolveConfig Config = MakeM1RelaxedSolveConfig();
+
+	FHexWfcBatchConfig BatchConfig;
+	BatchConfig.StartSeed = 2000;
+	BatchConfig.NumSeeds = 20;
+
+	const FHexWfcBatchStats Stats = UCanalWfcBlueprintLibrary::RunHexWfcBatch(TileSetAsset, Grid, Config, BatchConfig);
+	const double SolveRate = Stats.NumSeedsProcessed > 0
+		? static_cast<double>(Stats.NumSolved) / static_cast<double>(Stats.NumSeedsProcessed)
+		: 0.0;
+	TestTrue(
+		FString::Printf(TEXT("128-hex solve rate should be >= 90%% (got %.2f%%)."), SolveRate * 100.0),
+		SolveRate >= 0.90);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalM1Reliability512RelaxedTest,
+	"UEGame.Canal.M1.Reliability512Relaxed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalM1Reliability512RelaxedTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = BuildPrototypeTileSetAsset(*this);
+	if (!TileSetAsset)
+	{
+		return false;
+	}
+
+	FHexWfcGridConfig Grid;
+	Grid.Width = 32;
+	Grid.Height = 16;
+
+	FHexWfcSolveConfig Config = MakeM1RelaxedSolveConfig();
+
+	FHexWfcBatchConfig BatchConfig;
+	BatchConfig.StartSeed = 5000;
+	BatchConfig.NumSeeds = 10;
+
+	const FHexWfcBatchStats Stats = UCanalWfcBlueprintLibrary::RunHexWfcBatch(TileSetAsset, Grid, Config, BatchConfig);
+	const double SolveRate = Stats.NumSeedsProcessed > 0
+		? static_cast<double>(Stats.NumSolved) / static_cast<double>(Stats.NumSeedsProcessed)
+		: 0.0;
+	TestTrue(
+		FString::Printf(TEXT("512-hex solve rate should be >= 90%% (got %.2f%%)."), SolveRate * 100.0),
+		SolveRate >= 0.90);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCanalM1SplineAndSocketSmokeTest,
+	"UEGame.Canal.M1.SplineAndSockets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCanalM1SplineAndSocketSmokeTest::RunTest(const FString& Parameters)
+{
+	UCanalTopologyTileSetAsset* TileSetAsset = BuildFullWaterTileSetAsset(*this);
+	if (!TileSetAsset)
+	{
+		return false;
+	}
+
+	ACanalTopologyGeneratorActor* Generator = NewObject<ACanalTopologyGeneratorActor>(GetTransientPackage());
+	if (!Generator)
+	{
+		AddError(TEXT("Failed to allocate topology generator actor."));
+		return false;
+	}
+
+	Generator->TileSet = TileSetAsset;
+	Generator->GridConfig.Width = 16;
+	Generator->GridConfig.Height = 8;
+	Generator->SolveConfig = FHexWfcSolveConfig();
+	Generator->SolveConfig.Seed = 42;
+	Generator->SolveConfig.MaxAttempts = 2;
+	Generator->SolveConfig.bRequireEntryExitPath = true;
+	Generator->SolveConfig.bRequireSingleWaterComponent = true;
+	Generator->SolveConfig.bAutoSelectBoundaryPorts = false;
+	Generator->SolveConfig.EntryPort.bEnabled = true;
+	Generator->SolveConfig.EntryPort.Coord = FHexAxialCoord(0, 4);
+	Generator->SolveConfig.EntryPort.Direction = EHexDirection::West;
+	Generator->SolveConfig.ExitPort.bEnabled = true;
+	Generator->SolveConfig.ExitPort.Coord = FHexAxialCoord(15, 4);
+	Generator->SolveConfig.ExitPort.Direction = EHexDirection::East;
+	Generator->bGenerateSpline = true;
+
+	Generator->GenerateTopology();
+	TestTrue(TEXT("Generator should solve in relaxed M1 profile."), Generator->LastSolveResult.bSolved);
+	TestTrue(TEXT("Generator should produce a usable spline path."), Generator->HasGeneratedSpline());
+
+	TArray<FVector> SplinePoints;
+	Generator->GetGeneratedSplinePoints(SplinePoints, true);
+	TestTrue(TEXT("Spline should contain at least two points."), SplinePoints.Num() >= 2);
+
+	const bool bAdjacencyValid = ValidateSolvedAdjacency(
+		*this,
+		TileSetAsset->GetCompatibilityTable(),
+		Generator->LastSolveResult.Cells);
+	TestTrue(TEXT("All neighboring sockets should match in solved output."), bAdjacencyValid);
 
 	return true;
 }
